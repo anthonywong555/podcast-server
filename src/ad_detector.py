@@ -59,7 +59,7 @@ class AdDetector:
 
 Pay special attention to the beginning of the podcast - if the first few minutes contain multiple back-to-back advertisements before the actual show content starts, mark the entire intro ad block as one segment.
 
-Return ONLY a JSON array of ad segments with start/end times in seconds. Be aggressive in detecting ads, the user hates sponsors, sponsored messages, promotions, or anything that isn't pure content.
+Return ONLY a JSON array of ad segments with start/end times in seconds. Be aggressive in detecting ads - it's better to remove too much than too little.
 
 Format:
 [{"start": 0.0, "end": 240.0, "reason": "Intro ad block with multiple sponsors"}, ...]
