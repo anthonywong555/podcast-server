@@ -12,4 +12,5 @@ services:
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - WHISPER_MODEL=small
+      - BASE_URL=${BASE_URL:-http://localhost:8000}
     restart: unless-stopped

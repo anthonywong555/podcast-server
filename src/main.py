@@ -359,6 +359,10 @@ def health_check():
     return {'status': 'ok', 'feeds': len(FEEDS)}
 
 if __name__ == '__main__':
+    # Log BASE_URL configuration
+    base_url = os.getenv('BASE_URL', 'http://localhost:8000')
+    logger.info(f"BASE_URL configured as: {base_url}")
+
     # Start background RSS refresh thread
     refresh_thread = threading.Thread(target=background_rss_refresh, daemon=True)
     refresh_thread.start()
@@ -368,6 +372,7 @@ if __name__ == '__main__':
     logger.info("Performing initial RSS refresh for all feeds")
     for slug, feed_info in FEED_MAP.items():
         refresh_rss_feed(slug, feed_info['in'])
+        logger.info(f"Feed available at: {base_url}/{slug}")
 
     # Start Flask server
     logger.info("Starting Flask server on port 8000")

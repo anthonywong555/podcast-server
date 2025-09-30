@@ -2,6 +2,7 @@
 import feedparser
 import logging
 import hashlib
+import os
 from datetime import datetime
 from typing import Dict, List, Optional
 import requests
@@ -10,8 +11,8 @@ from slugify import slugify
 logger = logging.getLogger(__name__)
 
 class RSSParser:
-    def __init__(self, base_url: str = "http://localhost:8000"):
-        self.base_url = base_url
+    def __init__(self, base_url: str = None):
+        self.base_url = base_url or os.getenv('BASE_URL', 'http://localhost:8000')
 
     def fetch_feed(self, url: str, timeout: int = 30) -> Optional[str]:
         """Fetch RSS feed from URL."""
@@ -61,6 +62,9 @@ class RSSParser:
         lines.append(f'<link>{channel.get("link", "")}</link>')
         lines.append(f'<description>{channel.get("description", "")}</description>')
         lines.append(f'<language>{channel.get("language", "en")}</language>')
+
+        # Mark as private feed for personal use only
+        lines.append('<itunes:block>Yes</itunes:block>')
 
         if 'image' in channel:
             lines.append(f'<image>')
