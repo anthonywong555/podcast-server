@@ -57,18 +57,23 @@ class AdDetector:
 - Mentions of other podcasts/shows from the network (cross-promotion)
 - Sponsor messages about credit cards, apps, products, or services
 
-IMPORTANT: When detecting multi-part ad blocks (e.g., 4 back-to-back ads with minimal gaps), return ONE continuous segment from the start of the first ad to the end of the last ad. Do NOT split continuous ad blocks into multiple segments.
+CRITICAL RULES FOR MERGING:
+1. If there are multiple ads with NO ACTUAL SHOW CONTENT between them, treat them as ONE CONTINUOUS SEGMENT
+2. Brief transitions like "Listen to...", "Available on...", or silence between ads do NOT count as content
+3. Only split ads if there's REAL SHOW CONTENT (discussion, interview, topic content) between them
+4. When in doubt, merge the segments - it's better to remove a large block than leave ads in
 
-Pay special attention to the beginning of the podcast - if the first few minutes contain multiple back-to-back advertisements before the actual show content starts, mark the entire intro ad block as ONE SINGLE SEGMENT.
+IMPORTANT: When detecting multi-part ad blocks (e.g., 4 back-to-back ads with only transition phrases), return ONE continuous segment from the start of the first ad to the end of the last ad.
 
-Return ONLY a JSON array of ad segments with start/end times in seconds. Be aggressive in detecting ads - it's better to remove too much than too little.
+Return ONLY a JSON array of ad segments with start/end times in seconds. Be aggressive - better to remove too much than too little.
 
 Format:
-[{"start": 0.0, "end": 240.0, "reason": "4-minute intro ad block with multiple sponsors"}, ...]
+[{"start": 0.0, "end": 240.0, "reason": "Continuous ad block: multiple sponsors"}, ...]
 
-Example of what to do:
-- If ads run from 0-60s, 61-120s, 121-180s, 181-240s → Return ONE segment: {"start": 0.0, "end": 240.0}
-- Do NOT return multiple segments for continuous ad blocks
+Examples:
+- Ad at 100-200s, then "Listen to X podcast", then ad at 200-300s → ONE segment: 100-300s
+- Multiple podcast promos with only "Available on XYZ" between them → ONE segment covering all
+- Ad, then actual show discussion, then another ad → TWO separate segments
 
 If no ads are found, return an empty array: []
 

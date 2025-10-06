@@ -106,9 +106,9 @@ class AudioProcessor:
                 ad_duration = ad_end - ad_start
                 num_replacements = int(ad_duration / 60) + (1 if ad_duration % 60 > 0 else 0)
 
-                # Add repeated replacement audio with volume reduction
+                # Add repeated replacement audio with volume reduction to 15%
                 for i in range(num_replacements):
-                    filter_parts.append(f"[1:a]volume=0.4[beep{segment_idx}_{i}]")
+                    filter_parts.append(f"[1:a]volume=0.15[beep{segment_idx}_{i}]")
                     concat_parts.append(f"[beep{segment_idx}_{i}]")
 
                 current_time = ad_end
