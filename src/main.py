@@ -348,14 +348,9 @@ def serve_episode(slug, episode_id):
             status = None  # Reprocess
 
     elif status == 'failed':
-        # Serve original file (no retry)
-        original_url = episode_info.get('original_url')
-        if original_url:
-            logger.info(f"[{slug}:{episode_id}] Serving original fallback (previous failure)")
-            # Redirect to original URL
-            return Response(status=302, headers={'Location': original_url})
-        else:
-            abort(404)
+        # Always retry processing instead of serving fallback
+        logger.info(f"[{slug}:{episode_id}] Previous failure detected, retrying processing")
+        status = None  # Reset status to trigger reprocessing
 
     elif status == 'processing':
         # Already processing, return temporary unavailable
