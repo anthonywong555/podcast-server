@@ -50,23 +50,23 @@ The server includes a web-based management UI at `/ui/`:
 
 **Dashboard**
 
-![Dashboard](docs/screenshots/dashboard.png)
+<img src="docs/screenshots/dashboard.png" width="600">
 
 **Add Feed**
 
-![Add Feed](docs/screenshots/add-feed.png)
+<img src="docs/screenshots/add-feed.png" width="600">
 
 **Settings**
 
-![Settings](docs/screenshots/settings.png)
+<img src="docs/screenshots/settings.png" width="600">
 
 **Mobile**
 
-![Mobile](docs/screenshots/mobile.png)
+<img src="docs/screenshots/mobile.png" width="300">
 
 **API Documentation**
 
-![API Docs](docs/screenshots/api-docs.png)
+<img src="docs/screenshots/api-docs.png" width="600">
 
 ## Configuration
 
