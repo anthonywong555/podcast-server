@@ -2,6 +2,7 @@
 import logging
 import json
 import os
+import re
 from typing import List, Dict, Optional
 from anthropic import Anthropic
 
@@ -190,35 +191,73 @@ class AdDetector:
 
             # Parse JSON from response
             try:
-                start_idx = response_text.find('[')
-                end_idx = response_text.rfind(']') + 1
+                ads = None
 
-                if start_idx >= 0 and end_idx > start_idx:
-                    json_str = response_text[start_idx:end_idx]
-                    ads = json.loads(json_str)
+                # Strategy 1: Try to extract from markdown code block first
+                code_block_match = re.search(r'```(?:json)?\s*(\[[\s\S]*?\])\s*```', response_text)
+                if code_block_match:
+                    try:
+                        ads = json.loads(code_block_match.group(1))
+                        logger.debug(f"[{slug}:{episode_id}] Extracted JSON from code block")
+                    except json.JSONDecodeError:
+                        pass
 
-                    if isinstance(ads, list):
-                        valid_ads = []
-                        for ad in ads:
-                            if isinstance(ad, dict) and 'start' in ad and 'end' in ad:
-                                valid_ads.append({
-                                    'start': float(ad['start']),
-                                    'end': float(ad['end']),
-                                    'reason': ad.get('reason', 'Advertisement detected')
-                                })
+                # Strategy 2: Find all potential JSON arrays and use the last valid one
+                if ads is None:
+                    last_valid_ads = None
+                    # Match JSON arrays - use non-greedy to get individual arrays
+                    for match in re.finditer(r'\[(?:[^\[\]]*|\[(?:[^\[\]]*|\[[^\[\]]*\])*\])*\]', response_text):
+                        try:
+                            potential_ads = json.loads(match.group())
+                            if isinstance(potential_ads, list):
+                                # Check if it looks like ad data (has start/end keys)
+                                if not potential_ads or (potential_ads and isinstance(potential_ads[0], dict) and 'start' in potential_ads[0]):
+                                    last_valid_ads = potential_ads
+                        except json.JSONDecodeError:
+                            continue
 
-                        total_ad_time = sum(ad['end'] - ad['start'] for ad in valid_ads)
-                        logger.info(f"[{slug}:{episode_id}] Detected {len(valid_ads)} ad segments "
-                                   f"({total_ad_time/60:.1f} min total)")
+                    if last_valid_ads is not None:
+                        ads = last_valid_ads
+                        logger.debug(f"[{slug}:{episode_id}] Found valid JSON array in response")
 
-                        return {
-                            "ads": valid_ads,
-                            "raw_response": response_text,
-                            "model": model
-                        }
-                else:
+                # Strategy 3: Fallback to original first-to-last bracket logic
+                if ads is None:
+                    clean_response = re.sub(r'```json\s*', '', response_text)
+                    clean_response = re.sub(r'```\s*', '', clean_response)
+
+                    start_idx = clean_response.find('[')
+                    end_idx = clean_response.rfind(']') + 1
+
+                    if start_idx >= 0 and end_idx > start_idx:
+                        json_str = clean_response[start_idx:end_idx]
+                        ads = json.loads(json_str)
+
+                if ads is None:
                     logger.warning(f"[{slug}:{episode_id}] No JSON array found in response")
                     return {"ads": [], "raw_response": response_text, "error": "No JSON found"}
+
+                if isinstance(ads, list):
+                    valid_ads = []
+                    for ad in ads:
+                        if isinstance(ad, dict) and 'start' in ad and 'end' in ad:
+                            valid_ads.append({
+                                'start': float(ad['start']),
+                                'end': float(ad['end']),
+                                'reason': ad.get('reason', 'Advertisement detected')
+                            })
+
+                    total_ad_time = sum(ad['end'] - ad['start'] for ad in valid_ads)
+                    logger.info(f"[{slug}:{episode_id}] Detected {len(valid_ads)} ad segments "
+                               f"({total_ad_time/60:.1f} min total)")
+
+                    return {
+                        "ads": valid_ads,
+                        "raw_response": response_text,
+                        "model": model
+                    }
+                else:
+                    logger.warning(f"[{slug}:{episode_id}] Response was not a JSON array")
+                    return {"ads": [], "raw_response": response_text, "error": "Response not an array"}
 
             except json.JSONDecodeError as e:
                 logger.error(f"[{slug}:{episode_id}] Failed to parse JSON: {e}")

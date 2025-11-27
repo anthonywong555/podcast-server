@@ -1,4 +1,4 @@
-openapi: 3.0.3
+openapi: 3.1.0
 info:
   title: Podcast Server API
   description: |
@@ -336,7 +336,7 @@ paths:
                 claudeModel:
                   type: string
                   description: Claude model ID to use for ad detection
-                  example: claude-opus-4-5-20250929
+                  example: claude-sonnet-4-5-20250929
       responses:
         '200':
           description: Settings updated
@@ -464,9 +464,10 @@ components:
           format: uri
           description: Modified RSS feed URL served by this server
         artworkUrl:
-          type: string
+          type:
+            - string
+            - 'null'
           description: URL to cached artwork image
-          nullable: true
         episodeCount:
           type: integer
           description: Total number of episodes
@@ -474,10 +475,11 @@ components:
           type: integer
           description: Number of processed episodes
         lastRefreshed:
-          type: string
+          type:
+            - string
+            - 'null'
           format: date-time
           description: Last RSS refresh timestamp
-          nullable: true
         createdAt:
           type: string
           format: date-time
@@ -496,13 +498,15 @@ components:
           type: string
           format: date-time
         processedAt:
-          type: string
+          type:
+            - string
+            - 'null'
           format: date-time
-          nullable: true
         originalDuration:
-          type: number
+          type:
+            - number
+            - 'null'
           description: Original duration in seconds
-          nullable: true
         newDuration:
           type: number
           description: Duration after ad removal in seconds
@@ -553,7 +557,7 @@ components:
         id:
           type: string
           description: Model identifier
-          example: claude-opus-4-5-20250929
+          example: claude-sonnet-4-5-20250929
         name:
           type: string
           description: Human-readable model name

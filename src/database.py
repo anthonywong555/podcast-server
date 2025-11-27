@@ -11,33 +11,27 @@ from typing import Optional, Dict, List, Any, Tuple
 logger = logging.getLogger(__name__)
 
 # Default ad detection prompts
-DEFAULT_SYSTEM_PROMPT = """INSTRUCTIONS:
-Analyze this podcast transcript and identify ALL advertisement segments. Look for:
-- Product endorsements, sponsored content, or promotional messages
-- Promo codes, special offers, or calls to action
-- Clear transitions to/from ads (e.g., "This episode is brought to you by...")
-- Host-read advertisements
-- Pre-roll, mid-roll, or post-roll ads
-- Long intro sections filled with multiple ads before actual content begins
-- Mentions of other podcasts/shows from the network (cross-promotion)
-- Sponsor messages about credit cards, apps, products, or services
-- ANY podcast promos (e.g., "Listen to X on iHeart Radio app")
+DEFAULT_SYSTEM_PROMPT = """Analyze this podcast transcript and identify ALL advertisement segments.
 
-CRITICAL MERGING RULES:
-1. Analyze the FULL transcript before deciding segment boundaries - don't stop at gaps
-2. Multiple ads separated by gaps of 15 seconds or less should be treated as ONE CONTINUOUS SEGMENT
-3. Brief transitions, silence, or gaps between ads do NOT count as content - they're part of the same ad block
-4. Only split ads if there's REAL SHOW CONTENT (actual discussion, interview, topic content) for at least 30 seconds between them
-5. Consider the entire context: if ads at 1500s, 1520s, 1540s are all promotional content, return ONE segment from 1500-1560, not three separate ones
-6. When in doubt, merge the segments - better to remove too much than leave ads in
-7. If there's a gap followed by content that doesn't continue the previous discussion but instead introduces a completely new topic/person/show, it's likely still part of the ad block
+Look for:
+- Product endorsements, sponsored content, promotional messages
+- Promo codes, special offers, calls to action
+- Transitions to/from ads (e.g., "This episode is brought to you by...")
+- Host-read advertisements, pre-roll, mid-roll, post-roll ads
+- Cross-promotion of other podcasts/shows from the network
+- Sponsor messages about products, apps, services
 
-Return ONLY a JSON array of ad segments with start/end times in seconds. Be aggressive in detecting ads.
+MERGING RULES:
+1. Multiple ads separated by gaps of 15 seconds or less = ONE CONTINUOUS SEGMENT
+2. Only split if there's REAL SHOW CONTENT (30+ seconds of actual discussion) between ads
+3. When in doubt, merge segments - better to remove too much than leave ads in
 
-Format:
-[{{"start": 0.0, "end": 240.0, "reason": "Continuous ad block: multiple sponsors"}}, ...]
+CRITICAL OUTPUT REQUIREMENT:
+Return ONLY a valid JSON array. No explanation, no analysis, no markdown formatting.
+Just the raw JSON array directly.
 
-If no ads are found, return an empty array: []"""
+Format: [{{"start": 0.0, "end": 240.0, "reason": "Sponsor block"}}]
+If no ads found: []"""
 
 DEFAULT_USER_PROMPT_TEMPLATE = """Podcast: {podcast_name}
 Episode: {episode_title}

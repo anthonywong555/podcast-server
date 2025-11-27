@@ -48,6 +48,7 @@ RUN python3 -c "import os; from faster_whisper import download_model; download_m
 COPY src/ ./src/
 COPY version.py ./
 COPY assets/ ./assets/
+COPY assets/ ./assets_builtin/
 COPY openapi.yaml ./
 
 # Copy built frontend from builder stage

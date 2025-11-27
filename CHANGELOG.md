@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.12] - 2025-11-27
+
+### Fixed
+- Claude JSON parsing - improved extraction with multiple fallback strategies:
+  - First tries markdown code blocks
+  - Then finds all valid JSON arrays and uses the last one with ad structure
+  - Falls back to first-to-last bracket extraction
+- System prompt simplified to explicitly request JSON-only output (no analysis text)
+
+### Added
+- Search icon in header linking to Podcast Index for finding podcast RSS feeds
+
+---
+
+## [0.1.11] - 2025-11-27
+
+### Fixed
+- Removed torch dependency - use ctranslate2 for CUDA detection (fixes "No module named torch" error)
+- JSON parsing for Claude responses - now strips markdown code blocks before parsing
+- MIME type error behind reverse proxy - return 404 for missing assets instead of index.html
+- Asset fallback for Docker - if volume-mounted assets folder is empty, falls back to builtin assets
+
+### Changed
+- GPU logging now shows device count instead of GPU name/memory (torch no longer required)
+- Dockerfile copies assets to both `/app/assets/` and `/app/assets_builtin/` for fallback support
+
+---
+
+## [0.1.10] - 2025-11-27
+
+### Added
+- Mobile navigation hamburger menu - Settings now accessible on mobile devices
+- Podcast Index link on Dashboard - helps users find podcast RSS feeds at podcastindex.org
+- Version logging on startup - logs app version when server starts
+- GPU discovery logging - logs CUDA GPU name and memory when available
+
+### Fixed
+- Suppressed noisy ONNX Runtime GPU discovery warnings in logs
+- Better Claude JSON parsing error logging - logs raw response for debugging
+
+---
+
 ## [0.1.9] - 2025-11-27
 
 ### Fixed
@@ -45,20 +87,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Slug generation now fetches RSS feed to get podcast name (e.g., "tosh-show" instead of "rss")
 - Added Claude Opus 4.5 to available models list
 - Model validation now checks against VALID_MODELS list
-
----
-
-## [0.1.10] - 2025-11-27
-
-### Added
-- Mobile navigation hamburger menu - Settings now accessible on mobile devices
-- Podcast Index link on Dashboard - helps users find podcast RSS feeds at podcastindex.org
-- Version logging on startup - logs app version when server starts
-- GPU discovery logging - logs CUDA GPU name and memory when available
-
-### Fixed
-- Suppressed noisy ONNX Runtime GPU discovery warnings in logs
-- Better Claude JSON parsing error logging - logs raw response for debugging
 
 ---
 

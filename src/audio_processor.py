@@ -9,9 +9,26 @@ from typing import List, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
-# Get the assets directory relative to this file's location
+# Get the assets directory - check primary location first, fall back to builtin
 ASSETS_DIR = Path(__file__).parent.parent / "assets"
-DEFAULT_REPLACE_AUDIO = str(ASSETS_DIR / "replace.mp3")
+ASSETS_BUILTIN_DIR = Path(__file__).parent.parent / "assets_builtin"
+
+
+def get_replace_audio_path() -> str:
+    """Get the path to replace.mp3, checking primary assets first, then builtin."""
+    primary_path = ASSETS_DIR / "replace.mp3"
+    builtin_path = ASSETS_BUILTIN_DIR / "replace.mp3"
+
+    if primary_path.exists():
+        return str(primary_path)
+    elif builtin_path.exists():
+        return str(builtin_path)
+    else:
+        # Return primary path anyway (will fail later with clear error)
+        return str(primary_path)
+
+
+DEFAULT_REPLACE_AUDIO = get_replace_audio_path()
 
 
 class AudioProcessor:

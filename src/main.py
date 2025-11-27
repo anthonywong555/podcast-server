@@ -355,7 +355,12 @@ def serve_ui(path=''):
     if not STATIC_DIR.exists():
         return "UI not built. Run 'npm run build' in frontend directory.", 404
 
-    # Serve index.html for SPA routes
+    # For assets directory, return 404 if file doesn't exist (don't serve index.html)
+    # This prevents MIME type errors when JS/CSS files are not found
+    if path and path.startswith('assets/') and not (STATIC_DIR / path).exists():
+        return f"Asset not found: {path}", 404
+
+    # Serve index.html for SPA routes (non-asset paths)
     if not path or not (STATIC_DIR / path).exists():
         return send_from_directory(STATIC_DIR, 'index.html')
 

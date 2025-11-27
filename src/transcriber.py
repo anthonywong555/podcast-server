@@ -9,7 +9,7 @@ from pathlib import Path
 # Suppress ONNX Runtime warnings before importing faster_whisper
 os.environ.setdefault('ORT_LOG_LEVEL', 'ERROR')
 
-import torch
+import ctranslate2
 from faster_whisper import WhisperModel, BatchedInferencePipeline
 
 logger = logging.getLogger(__name__)
@@ -32,10 +32,9 @@ class WhisperModelSingleton:
 
             # Check CUDA availability and set compute type
             if device == "cuda":
-                if torch.cuda.is_available():
-                    gpu_name = torch.cuda.get_device_name(0)
-                    gpu_memory = torch.cuda.get_device_properties(0).total_memory / (1024**3)
-                    logger.info(f"CUDA available: {gpu_name} ({gpu_memory:.1f} GB)")
+                cuda_device_count = ctranslate2.get_cuda_device_count()
+                if cuda_device_count > 0:
+                    logger.info(f"CUDA available: {cuda_device_count} device(s) detected")
                     compute_type = "float16"  # Use FP16 for GPU
                     logger.info(f"Initializing Whisper model: {model_size} on CUDA with float16")
                 else:
