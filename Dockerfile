@@ -40,9 +40,14 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pre-download Faster Whisper model
+# Pre-download Faster Whisper model to /app/data/.cache (accessible by non-root users)
 ENV WHISPER_MODEL=small
-RUN python3 -c "import os; from faster_whisper import download_model; download_model(os.getenv('WHISPER_MODEL', 'small'))"
+ENV HF_HOME=/app/data/.cache
+ENV HUGGINGFACE_HUB_CACHE=/app/data/.cache/hub
+ENV XDG_CACHE_HOME=/app/data/.cache
+RUN mkdir -p /app/data/.cache && \
+    python3 -c "import os; from faster_whisper import download_model; download_model(os.getenv('WHISPER_MODEL', 'small'))" && \
+    chmod -R 777 /app/data/.cache
 
 # Copy application code
 COPY src/ ./src/
@@ -54,8 +59,8 @@ COPY openapi.yaml ./
 # Copy built frontend from builder stage
 COPY --from=frontend-builder /app/static/ui ./static/ui/
 
-# Create data directory
-RUN mkdir -p /app/data
+# Create data directory with proper permissions for non-root users
+RUN mkdir -p /app/data && chmod -R 777 /app/data
 
 # Environment variables
 ENV RETENTION_PERIOD=30

@@ -9,6 +9,13 @@ from pathlib import Path
 # Suppress ONNX Runtime warnings before importing faster_whisper
 os.environ.setdefault('ORT_LOG_LEVEL', 'ERROR')
 
+# Set cache directories to writable location (for running as non-root user)
+# These must be set BEFORE importing faster_whisper/huggingface
+cache_dir = os.environ.get('HF_HOME', '/app/data/.cache')
+os.environ.setdefault('HF_HOME', cache_dir)
+os.environ.setdefault('HUGGINGFACE_HUB_CACHE', os.path.join(cache_dir, 'hub'))
+os.environ.setdefault('XDG_CACHE_HOME', cache_dir)
+
 import ctranslate2
 from faster_whisper import WhisperModel, BatchedInferencePipeline
 
