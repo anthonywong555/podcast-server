@@ -136,6 +136,31 @@ The docker-compose includes an optional Cloudflare tunnel service for secure rem
 2. Add `TUNNEL_TOKEN` to your `.env` file
 3. Configure the tunnel to point to `http://podcast-server:8000`
 
+### Security Recommendations
+
+When exposing your feed to the internet (required for apps like Pocket Casts), consider adding WAF rules to:
+- Only allow requests from known podcast app User-Agents
+- Block access to admin endpoints (`/ui`, `/docs`, `/api`)
+
+**Cloudflare WAF Example**
+
+Create a custom rule to allow only Pocket Casts and block admin paths:
+
+```
+Rule name: feed_only_allow_pocketcasts
+
+Expression:
+(http.request.full_uri wildcard r"http*://feed.example.com/*" and not http.user_agent wildcard "*Pocket*Casts*") or (http.request.uri.path in {"/ui" "/docs"})
+
+Action: Block
+```
+
+This blocks:
+- Any request to your feed domain without "Pocket Casts" in the User-Agent
+- All requests to `/ui` and `/docs` endpoints
+
+Adjust the User-Agent pattern for your podcast app (e.g., `*Overcast*`, `*Castro*`, `*AntennaPod*`).
+
 ## Data Storage
 
 All data is stored in the `./data` directory:

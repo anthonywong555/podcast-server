@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.17] - 2025-11-27
+
+### Fixed
+- Audio download failing with 403 Forbidden on certain podcast CDNs (e.g., Acast)
+  - Added browser-like User-Agent headers to audio and artwork download requests
+  - CDNs were blocking requests with default python-requests User-Agent
+
+---
+
 ## [0.1.16] - 2025-11-27
 
 ### Fixed

@@ -273,7 +273,12 @@ class Storage:
 
             logger.info(f"[{slug}] Downloading artwork from {artwork_url}")
 
-            response = requests.get(artwork_url, timeout=30, stream=True)
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': '*/*',
+                'Accept-Language': 'en-US,en;q=0.9',
+            }
+            response = requests.get(artwork_url, headers=headers, timeout=30, stream=True)
             response.raise_for_status()
 
             content_type = response.headers.get('Content-Type', 'image/jpeg')
