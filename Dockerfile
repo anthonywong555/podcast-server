@@ -40,14 +40,14 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pre-download Faster Whisper model to /app/data/.cache (accessible by non-root users)
+# Set cache directories to /app/data/.cache (works with volume mounts and non-root users)
 ENV WHISPER_MODEL=small
 ENV HF_HOME=/app/data/.cache
 ENV HUGGINGFACE_HUB_CACHE=/app/data/.cache/hub
 ENV XDG_CACHE_HOME=/app/data/.cache
-RUN mkdir -p /app/data/.cache && \
-    python3 -c "import os; from faster_whisper import download_model; download_model(os.getenv('WHISPER_MODEL', 'small'))" && \
-    chmod -R 777 /app/data/.cache
+
+# Note: We don't pre-download the model here because /app/data is typically
+# a volume mount. The model will download on first run to the mounted volume.
 
 # Copy application code
 COPY src/ ./src/
@@ -56,11 +56,16 @@ COPY assets/ ./assets/
 COPY assets/ ./assets_builtin/
 COPY openapi.yaml ./
 
-# Copy built frontend from builder stage
+# Copy built frontend from builder stage and fix permissions
 COPY --from=frontend-builder /app/static/ui ./static/ui/
+RUN chmod -R 644 ./static/ui/* && chmod 755 ./static/ui ./static/ui/assets
 
-# Create data directory with proper permissions for non-root users
-RUN mkdir -p /app/data && chmod -R 777 /app/data
+# Copy entrypoint script
+COPY entrypoint.sh /app/
+RUN chmod +x /app/entrypoint.sh
+
+# Create data directory (will be overwritten by volume mount in most cases)
+RUN mkdir -p /app/data
 
 # Environment variables
 ENV RETENTION_PERIOD=30
@@ -68,5 +73,5 @@ ENV RETENTION_PERIOD=30
 # Expose port
 EXPOSE 8000
 
-# Run the application
-CMD ["python", "src/main.py"]
+# Run the application via entrypoint
+ENTRYPOINT ["/app/entrypoint.sh"]

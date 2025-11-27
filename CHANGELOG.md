@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.15] - 2025-11-27
+
+### Fixed
+- Favicon not loading - file had restrictive permissions (600) preventing non-root access
+- Set proper read permissions (644) on all static UI files in Docker build
+
+---
+
+## [0.1.14] - 2025-11-27
+
+### Fixed
+- Permission denied error when running as any non-root user
+  - HuggingFace cache now writes to `/app/data/.cache` (inside the mounted volume)
+  - Added entrypoint.sh to create required directories at runtime
+  - Model downloads on first run to the mounted volume (owned by running user)
+  - Works with any `user:` setting in docker-compose, not just 1000:1000
+
+### Changed
+- Removed pre-downloaded model from image (was being hidden by volume mount anyway)
+- Switched from CMD to ENTRYPOINT for better container initialization
+
+---
+
 ## [0.1.13] - 2025-11-27
 
 ### Fixed
