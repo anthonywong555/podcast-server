@@ -4,13 +4,19 @@ import subprocess
 import tempfile
 import os
 import shutil
+from pathlib import Path
 from typing import List, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
+# Get the assets directory relative to this file's location
+ASSETS_DIR = Path(__file__).parent.parent / "assets"
+DEFAULT_REPLACE_AUDIO = str(ASSETS_DIR / "replace.mp3")
+
+
 class AudioProcessor:
-    def __init__(self, replace_audio_path: str = "./assets/replace.mp3"):
-        self.replace_audio_path = replace_audio_path
+    def __init__(self, replace_audio_path: str = None):
+        self.replace_audio_path = replace_audio_path or DEFAULT_REPLACE_AUDIO
 
     def check_ffmpeg(self) -> bool:
         """Check if FFMPEG is available."""
