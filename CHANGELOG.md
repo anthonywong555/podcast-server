@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.39] - 2025-11-29
+
+### Fixed
+- Ad detector not parsing "end_text" field from Claude response
+  - Prompt requested end_text but ad_detector.py was not extracting it from response
+  - Now correctly parses and includes end_text in ad segment data
+  - Enables debugging of ad boundary precision issues
+
+---
+
 ## [0.1.38] - 2025-11-29
 
 ### Changed

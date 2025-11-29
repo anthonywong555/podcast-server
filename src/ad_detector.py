@@ -236,7 +236,8 @@ class AdDetector:
                                 'start': float(ad['start']),
                                 'end': float(ad['end']),
                                 'confidence': float(ad.get('confidence', 1.0)),
-                                'reason': ad.get('reason', 'Advertisement detected')
+                                'reason': ad.get('reason', 'Advertisement detected'),
+                                'end_text': ad.get('end_text', '')
                             })
 
                     total_ad_time = sum(ad['end'] - ad['start'] for ad in valid_ads)
