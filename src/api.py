@@ -386,28 +386,22 @@ def get_episode(slug, episode_id):
         status = 'completed'
 
     return json_response({
-        # Frontend expected fields (snake_case)
         'id': episode['episode_id'],
+        'episodeId': episode['episode_id'],
         'title': episode['title'],
         'status': status,
         'published': episode['created_at'],
-        'duration': episode['original_duration'],
-        'ad_count': episode['ads_removed'],
-        'original_url': episode['original_url'],
-        'processed_url': f"{base_url}/episodes/{slug}/{episode_id}.mp3",
-        'ad_segments': ad_markers,
-        'transcript': episode.get('transcript_text'),
-        # Additional fields for backward compatibility (camelCase)
-        'episodeId': episode['episode_id'],
-        'originalUrl': episode['original_url'],
-        'processedUrl': f"{base_url}/episodes/{slug}/{episode_id}.mp3",
         'createdAt': episode['created_at'],
         'processedAt': episode['processed_at'],
+        'duration': episode['original_duration'],
         'originalDuration': episode['original_duration'],
         'newDuration': episode['new_duration'],
+        'originalUrl': episode['original_url'],
+        'processedUrl': f"{base_url}/episodes/{slug}/{episode_id}.mp3",
         'adsRemoved': episode['ads_removed'],
         'timeSaved': time_saved,
         'adMarkers': ad_markers,
+        'transcript': episode.get('transcript_text'),
         'transcriptAvailable': bool(episode.get('transcript_text')),
         'error': episode.get('error_message'),
         'claudePrompt': episode.get('claude_prompt'),
@@ -508,7 +502,7 @@ def get_settings():
             'value': current_model,
             'isDefault': settings.get('claude_model', {}).get('is_default', True)
         },
-        'retentionPeriodMinutes': int(settings.get('retention_period_minutes', {}).get('value', '1440')),
+        'retentionPeriodMinutes': int(os.environ.get('RETENTION_PERIOD') or settings.get('retention_period_minutes', {}).get('value', '1440')),
         'defaults': {
             'systemPrompt': DEFAULT_SYSTEM_PROMPT,
             'claudeModel': DEFAULT_MODEL
@@ -575,9 +569,9 @@ def get_system_status():
     stats = db.get_stats()
     storage_stats = storage.get_storage_stats()
 
-    # Get retention setting
-    retention = int(db.get_setting('retention_period_minutes') or
-                    os.environ.get('RETENTION_PERIOD', '1440'))
+    # Get retention setting - env var takes precedence
+    retention = int(os.environ.get('RETENTION_PERIOD') or
+                    db.get_setting('retention_period_minutes') or '1440')
 
     return json_response({
         'status': 'running',
@@ -609,14 +603,14 @@ def get_system_status():
 @api.route('/system/cleanup', methods=['POST'])
 @log_request
 def trigger_cleanup():
-    """Trigger manual cleanup of old episodes."""
+    """Delete ALL processed episodes immediately (ignores retention period)."""
     db = get_database()
 
-    deleted_count, freed_mb = db.cleanup_old_episodes()
+    deleted_count, freed_mb = db.cleanup_old_episodes(force_all=True)
 
-    logger.info(f"Manual cleanup: {deleted_count} episodes, {freed_mb:.1f} MB freed")
+    logger.info(f"Manual cleanup: {deleted_count} episodes deleted, {freed_mb:.1f} MB freed")
     return json_response({
-        'message': 'Cleanup complete',
+        'message': 'All episodes deleted',
         'episodesRemoved': deleted_count,
         'spaceFreedMb': round(freed_mb, 2)
     })

@@ -5,6 +5,68 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.45] - 2025-11-29
+
+### Changed
+- Improved ad detection system prompt for better boundary precision
+  - Added AD START SIGNALS section to capture transitions ("let's take a break", etc.)
+  - Added POST-ROLL ADS section to detect local business ads at end of episodes
+  - Updated example to show transition phrase included in ad segment
+- Longer fade-in after beep (0.8s instead of 0.5s) for smoother return to content
+  - Content fade-out before beep: 0.5s (unchanged)
+  - Content fade-in after beep: 0.8s (was 0.5s)
+  - Beep fades: 0.5s (unchanged)
+- "Run Cleanup" button renamed to "Delete All Episodes"
+  - Now immediately deletes ALL processed episodes (ignores retention period)
+  - Uses double-click confirmation pattern (click once to arm, click again to confirm)
+  - Button turns red when armed, auto-resets after 3 seconds
+
+### Fixed
+- Removed duplicate snake_case fields from episode API response
+  - Removed: original_url, processed_url, ad_segments, ad_count
+  - Kept camelCase equivalents: originalUrl, processedUrl, adMarkers, adsRemoved
+
+---
+
+## [0.1.44] - 2025-11-29
+
+### Fixed
+- Beep replacement only playing for first ad when multiple ads detected
+  - Root cause: ffmpeg input streams can only be used once in filter_complex
+  - Added asplit to create N copies of beep input for N ads
+  - Now all ads get proper beep replacement with fades
+- RETENTION_PERIOD env var being ignored after initial database setup
+  - Env var now takes precedence over database setting
+  - Allows runtime override without database modification
+
+---
+
+## [0.1.43] - 2025-11-29
+
+### Added
+- Audio fading on replacement beep (0.5s fade-in and fade-out)
+  - Creates smoother transitions: content fade-out -> beep fade-in -> beep fade-out -> content fade-in
+- end_text field back in ad detection prompt for debugging ad boundary issues
+  - Shows last 3-5 words Claude identified as the ad ending
+  - Stored in API response for debugging, not used programmatically
+
+### Changed
+- Claude API temperature set to 0.0 (was 0.2)
+  - Makes ad detection deterministic - same transcript produces same results
+  - Fixes ad count varying between reprocesses of the same episode
+
+---
+
+## [0.1.42] - 2025-11-29
+
+### Fixed
+- Audio fading still not working after v0.1.41 fix
+  - Root cause: ffmpeg atrim filter does not reset timestamps
+  - Added asetpts=PTS-STARTPTS after atrim to reset timestamps to 0-based
+  - Without this, afade st= parameter was looking for timestamps that did not exist in the trimmed stream
+
+---
+
 ## [0.1.41] - 2025-11-29
 
 ### Fixed

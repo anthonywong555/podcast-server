@@ -169,7 +169,7 @@ class AdDetector:
             response = self.client.messages.create(
                 model=model,
                 max_tokens=2000,
-                temperature=0.2,
+                temperature=0.0,
                 system=system_prompt,
                 messages=[{
                     "role": "user",
