@@ -13,6 +13,10 @@ logger = logging.getLogger(__name__)
 # Default ad detection prompts
 DEFAULT_SYSTEM_PROMPT = """Analyze this podcast transcript and identify ALL advertisement segments.
 
+CRITICAL: Host-read sponsor segments ARE advertisements. Do NOT distinguish between "traditional ads" and "sponsor reads" - both must be detected and returned. Any content where the host promotes a product, service, or sponsor for compensation is an ad, regardless of how naturally it's integrated.
+
+PRIORITY: Focus on FINDING all ads first, then refining boundaries. It is better to include an ad with imprecise boundaries than to miss it entirely.
+
 WHAT TO LOOK FOR:
 - Product endorsements, sponsored content, promotional messages
 - Promo codes, special offers, discount codes, calls to action
@@ -23,7 +27,7 @@ WHAT TO LOOK FOR:
 - Vanity URLs (e.g., "visit example.com/podcastname")
 
 COMMON PODCAST SPONSORS (high confidence if mentioned):
-BetterHelp, Athletic Greens, AG1, Shopify, Amazon, Audible, Squarespace, HelloFresh, Factor, NordVPN, ExpressVPN, Mint Mobile, MasterClass, Calm, Headspace, ZipRecruiter, Indeed, LinkedIn Jobs, Stamps.com, SimpliSafe, Ring, ADT, Casper, Helix Sleep, Purple, Brooklinen, Bombas, Manscaped, Dollar Shave Club, Harry's, Quip, Hims, Hers, Roman, Keeps, Function of Beauty, Native, Liquid IV, Athletic Brewing, Magic Spoon, Thrive Market, Butcher Box, Blue Apron, DoorDash, Uber Eats, Grubhub, Instacart, Rocket Money, Credit Karma, SoFi, Acorns, Betterment, Wealthfront, PolicyGenius, Lemonade, State Farm, Progressive, Geico, Liberty Mutual, T-Mobile, Visible, FanDuel, DraftKings, BetMGM, Toyota, Hyundai, CarMax, Carvana, eBay Motors, ZocDoc, GoodRx, Care/of, Ritual, Seed, HubSpot, NetSuite, Monday.com, Notion, Canva, Grammarly, Babbel, Rosetta Stone, Blinkist, Raycon, Bose, MacPaw, CleanMyMac, Green Chef, Magic Mind, Honeylove, Cozy Earth, Quince, LMNT, Nutrafol, Aura, OneSkin, Incogni, Gametime
+BetterHelp, Athletic Greens, AG1, Shopify, Amazon, Audible, Squarespace, HelloFresh, Factor, NordVPN, ExpressVPN, Mint Mobile, MasterClass, Calm, Headspace, ZipRecruiter, Indeed, LinkedIn Jobs, LinkedIn, Stamps.com, SimpliSafe, Ring, ADT, Casper, Helix Sleep, Purple, Brooklinen, Bombas, Manscaped, Dollar Shave Club, Harry's, Quip, Hims, Hers, Roman, Keeps, Function of Beauty, Native, Liquid IV, Athletic Brewing, Magic Spoon, Thrive Market, Butcher Box, Blue Apron, DoorDash, Uber Eats, Grubhub, Instacart, Rocket Money, Credit Karma, SoFi, Acorns, Betterment, Wealthfront, PolicyGenius, Lemonade, State Farm, Progressive, Geico, Liberty Mutual, T-Mobile, Visible, FanDuel, DraftKings, BetMGM, Toyota, Hyundai, CarMax, Carvana, eBay Motors, ZocDoc, GoodRx, Care/of, Ritual, Seed, HubSpot, NetSuite, Monday.com, Notion, Canva, Grammarly, Babbel, Rosetta Stone, Blinkist, Raycon, Bose, MacPaw, CleanMyMac, Green Chef, Magic Mind, Honeylove, Cozy Earth, Quince, LMNT, Nutrafol, Aura, OneSkin, Incogni, Gametime, 1Password, Bitwarden, CacheFly, Deel, DeleteMe, Framer, Miro, Monarch Money, OutSystems, Spaceship, Thinkst Canary, ThreatLocker, Vanta, Veeam, Zapier, Zscaler, Capital One, Ford, WhatsApp
 
 COMMON AD PHRASES:
 - "Use code [NAME] at checkout"
@@ -34,15 +38,39 @@ COMMON AD PHRASES:
 - "Thanks to [brand] for sponsoring"
 - "This portion brought to you by"
 
+AD END SIGNALS (ad typically ends after the LAST of these):
+- Final URL mention: "...example.com" or "that's [URL]"
+- Final call-to-action: "Get started now at...", "Visit...", "Go to..."
+- Final promo code mention
+- Repeated URL: "That's [URL]" or "Again, that's [URL]"
+
+AD START SIGNALS (ad segment starts AT or BEFORE these phrases):
+- "Let's take a break", "We'll be right back", "A word from our sponsors"
+- "...and we'll get back to that in just a moment"
+- "This episode/show is brought to you by...", "Thanks to [brand] for sponsoring"
+- IMPORTANT: Include the transition phrase in the ad segment, not just the product pitch
+
 AD CHARACTERISTICS:
 - Ad breaks typically last 15-120 seconds
 - Pre-roll ads appear before the intro, mid-roll during the episode, post-roll after the outro
 - Multiple back-to-back sponsor reads should be merged into one segment
 
+POST-ROLL ADS:
+- Often start immediately after "Thanks for listening" or similar outro
+- May include multiple back-to-back local/network ads (car dealers, plumbing, appliances)
+- If ads continue to the END of the audio, set end time to the final timestamp
+- Common indicators: phone numbers, local business names, "call now" CTAs
+
 MERGING RULES:
 1. Multiple ads separated by gaps of 15 seconds or less = ONE CONTINUOUS SEGMENT
 2. Only split if there's REAL SHOW CONTENT (30+ seconds of actual discussion) between ads
 3. When in doubt, merge segments - better to remove too much than leave ads in
+
+MID-BLOCK BOUNDARIES:
+When a timestamp block contains BOTH ad content AND show content (e.g., ad ends mid-block):
+- Identify the text where the ad ends
+- Estimate proportional end time based on text position in the block
+- Err toward ending earlier rather than including show content
 
 OUTPUT FORMAT:
 Return ONLY a valid JSON array. No explanation, no analysis, no markdown formatting.
@@ -52,14 +80,17 @@ Each ad segment must include:
 - "end": End time in seconds
 - "confidence": Confidence score from 0.0 to 1.0 (1.0 = certain it's an ad)
 - "reason": Brief description of why this is an ad
+- "end_text": Last 3-5 words spoken before ad ends (for boundary debugging)
 
-Format: [{{"start": 0.0, "end": 60.0, "confidence": 0.95, "reason": "Sponsor read for BetterHelp"}}]
+Format: [{{"start": 0.0, "end": 60.0, "confidence": 0.95, "reason": "Sponsor read for BetterHelp", "end_text": "athleticgreens.com/podcast"}}]
 If no ads found: []
+
+REMINDER: Include ALL sponsor reads, even if the host reads them naturally or integrates them conversationally. "Brought to you by" segments are ads. Do not skip ads because show content appears in the same timestamp block - just adjust the end time.
 
 EXAMPLE:
 
 Given transcript excerpt:
-[45.0s - 48.0s] And we'll get back to that story in just a moment.
+[45.0s - 48.0s] That's a great point. Let's take a quick break.
 [48.5s - 52.0s] This episode is brought to you by Athletic Greens.
 [52.5s - 58.0s] AG1 is the daily foundational nutrition supplement that supports whole body health.
 [58.5s - 65.0s] I've been taking it for years and I love how it simplifies my routine.
@@ -68,8 +99,8 @@ Given transcript excerpt:
 [78.5s - 82.0s] That's athleticgreens.com/podcast.
 [82.5s - 86.0s] Now, back to our conversation with Dr. Smith.
 
-Output:
-[{{"start": 48.5, "end": 82.0, "confidence": 0.98, "reason": "Athletic Greens sponsor read with promo URL"}}]"""
+Output (note: start at 45.0 includes the transition phrase):
+[{{"start": 45.0, "end": 82.0, "confidence": 0.98, "reason": "Athletic Greens sponsor read with transition and promo URL", "end_text": "athleticgreens.com/podcast"}}]"""
 
 
 SCHEMA_SQL = """
@@ -301,53 +332,6 @@ class Database:
                             ep_data.get('error')
                         )
                     )
-
-                    # Get episode database ID
-                    cursor = conn.execute(
-                        """SELECT id FROM episodes
-                           WHERE podcast_id = ? AND episode_id = ?""",
-                        (podcast_id, episode_id)
-                    )
-                    ep_row = cursor.fetchone()
-                    if not ep_row:
-                        continue
-
-                    db_episode_id = ep_row['id']
-
-                    # Migrate transcript and ad data
-                    transcript_path = podcast_dir / "episodes" / f"{episode_id}-transcript.txt"
-                    ads_path = podcast_dir / "episodes" / f"{episode_id}-ads.json"
-                    prompt_path = podcast_dir / "episodes" / f"{episode_id}-prompt.txt"
-
-                    transcript_text = None
-                    ad_markers_json = None
-                    claude_raw_response = None
-                    claude_prompt = None
-
-                    if transcript_path.exists():
-                        transcript_text = transcript_path.read_text()
-
-                    if ads_path.exists():
-                        try:
-                            ads_data = json.loads(ads_path.read_text())
-                            ad_markers_json = json.dumps(ads_data.get('ads', []))
-                            claude_raw_response = ads_data.get('raw_response')
-                        except json.JSONDecodeError:
-                            pass
-
-                    if prompt_path.exists():
-                        claude_prompt = prompt_path.read_text()
-
-                    if any([transcript_text, ad_markers_json, claude_raw_response, claude_prompt]):
-                        conn.execute(
-                            """INSERT INTO episode_details
-                               (episode_id, transcript_text, ad_markers_json,
-                                claude_raw_response, claude_prompt)
-                               VALUES (?, ?, ?, ?, ?)
-                               ON CONFLICT(episode_id) DO NOTHING""",
-                            (db_episode_id, transcript_text, ad_markers_json,
-                             claude_raw_response, claude_prompt)
-                        )
 
                 logger.info(f"Migrated data for podcast: {slug}")
 
@@ -741,31 +725,39 @@ class Database:
 
     # ========== Cleanup Methods ==========
 
-    def cleanup_old_episodes(self) -> Tuple[int, float]:
+    def cleanup_old_episodes(self, force_all: bool = False) -> Tuple[int, float]:
         """
-        Delete episodes older than retention period.
+        Delete episodes older than retention period, or all episodes if force_all=True.
         Returns (count deleted, MB freed estimate).
         """
         conn = self.get_connection()
 
-        # Get retention period
-        retention_minutes = int(self.get_setting('retention_period_minutes') or
-                               os.environ.get('RETENTION_PERIOD', '1440'))
+        if force_all:
+            # Delete ALL episodes immediately
+            cursor = conn.execute(
+                """SELECT e.id, e.episode_id, e.processed_file, p.slug
+                   FROM episodes e
+                   JOIN podcasts p ON e.podcast_id = p.id"""
+            )
+        else:
+            # Get retention period - env var takes precedence over database setting
+            retention_minutes = int(os.environ.get('RETENTION_PERIOD') or
+                                   self.get_setting('retention_period_minutes') or '1440')
 
-        if retention_minutes <= 0:
-            return 0, 0.0
+            if retention_minutes <= 0:
+                return 0, 0.0
 
-        cutoff = datetime.utcnow() - timedelta(minutes=retention_minutes)
-        cutoff_str = cutoff.strftime('%Y-%m-%dT%H:%M:%SZ')
+            cutoff = datetime.utcnow() - timedelta(minutes=retention_minutes)
+            cutoff_str = cutoff.strftime('%Y-%m-%dT%H:%M:%SZ')
 
-        # Get episodes to delete
-        cursor = conn.execute(
-            """SELECT e.id, e.episode_id, e.processed_file, p.slug
-               FROM episodes e
-               JOIN podcasts p ON e.podcast_id = p.id
-               WHERE e.created_at < ?""",
-            (cutoff_str,)
-        )
+            # Get episodes to delete
+            cursor = conn.execute(
+                """SELECT e.id, e.episode_id, e.processed_file, p.slug
+                   FROM episodes e
+                   JOIN podcasts p ON e.podcast_id = p.id
+                   WHERE e.created_at < ?""",
+                (cutoff_str,)
+            )
 
         episodes_to_delete = cursor.fetchall()
         deleted_count = 0
@@ -791,10 +783,13 @@ class Database:
             deleted_count += 1
 
         # Delete from database (cascade deletes episode_details)
-        conn.execute(
-            "DELETE FROM episodes WHERE created_at < ?",
-            (cutoff_str,)
-        )
+        if force_all:
+            conn.execute("DELETE FROM episodes")
+        else:
+            conn.execute(
+                "DELETE FROM episodes WHERE created_at < ?",
+                (cutoff_str,)
+            )
         conn.commit()
 
         freed_mb = freed_bytes / (1024 * 1024)

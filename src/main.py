@@ -6,7 +6,8 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from flask import Flask, Response, send_file, abort, send_from_directory
+from functools import wraps
+from flask import Flask, Response, send_file, abort, send_from_directory, request
 from flask_cors import CORS
 from slugify import slugify
 import shutil
@@ -54,6 +55,28 @@ logger = logging.getLogger('podcast.app')
 feed_logger = logging.getLogger('podcast.feed')
 refresh_logger = logging.getLogger('podcast.refresh')
 audio_logger = logging.getLogger('podcast.audio')
+
+
+def log_request_detailed(f):
+    """Decorator to log requests with detailed info (IP, user-agent, response time)."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        start_time = time.time()
+        client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+        user_agent = request.headers.get('User-Agent', 'Unknown')[:100]
+
+        try:
+            result = f(*args, **kwargs)
+            elapsed = (time.time() - start_time) * 1000  # ms
+            status = result.status_code if hasattr(result, 'status_code') else 200
+            feed_logger.info(f"{request.method} {request.path} {status} {elapsed:.0f}ms [{client_ip}] [{user_agent}]")
+            return result
+        except Exception as e:
+            elapsed = (time.time() - start_time) * 1000
+            feed_logger.error(f"{request.method} {request.path} ERROR {elapsed:.0f}ms [{client_ip}] - {e}")
+            raise
+    return decorated
+
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -138,9 +161,7 @@ def refresh_rss_feed(slug: str, feed_url: str):
         storage.save_rss(slug, modified_rss)
 
         # Update last_checked timestamp
-        data = storage.load_data_json(slug)
-        data['last_checked'] = datetime.utcnow().isoformat() + 'Z'
-        storage.save_data_json(slug, data)
+        db.update_podcast(slug, last_checked_at=datetime.utcnow().isoformat() + 'Z')
 
         refresh_logger.info(f"[{slug}] RSS refresh complete")
         return True
@@ -192,24 +213,17 @@ def process_episode(slug: str, episode_id: str, episode_url: str,
         audio_logger.info(f"[{slug}:{episode_id}] Starting: \"{episode_title}\"")
 
         # Update status to processing
-        data = storage.load_data_json(slug)
-        data['episodes'][episode_id] = {
-            'status': 'processing',
-            'original_url': episode_url,
-            'title': episode_title,
-            'processed_at': datetime.utcnow().isoformat() + 'Z'
-        }
-        storage.save_data_json(slug, data)
+        db.upsert_episode(slug, episode_id,
+            original_url=episode_url,
+            title=episode_title,
+            status='processing')
 
-        # Step 1: Check if transcript exists
-        transcript_path = storage.get_episode_path(slug, episode_id, "-transcript.txt")
+        # Step 1: Check if transcript exists in database
         segments = None
-        transcript_text = None
+        transcript_text = storage.get_transcript(slug, episode_id)
 
-        if transcript_path.exists():
-            audio_logger.info(f"[{slug}:{episode_id}] Found existing transcript")
-            with open(transcript_path, 'r') as f:
-                transcript_text = f.read()
+        if transcript_text:
+            audio_logger.info(f"[{slug}:{episode_id}] Found existing transcript in database")
 
             # Parse segments from transcript
             segments = []
@@ -286,18 +300,12 @@ def process_episode(slug: str, episode_id: str, episode_url: str,
             shutil.move(processed_path, final_path)
 
             # Update status to processed
-            data = storage.load_data_json(slug)
-            data['episodes'][episode_id] = {
-                'status': 'processed',
-                'original_url': episode_url,
-                'title': episode_title,
-                'processed_file': f"episodes/{episode_id}.mp3",
-                'processed_at': datetime.utcnow().isoformat() + 'Z',
-                'original_duration': original_duration,
-                'new_duration': new_duration,
-                'ads_removed': len(ads)
-            }
-            storage.save_data_json(slug, data)
+            db.upsert_episode(slug, episode_id,
+                status='processed',
+                processed_file=f"episodes/{episode_id}.mp3",
+                original_duration=original_duration,
+                new_duration=new_duration,
+                ads_removed=len(ads))
 
             processing_time = time.time() - start_time
 
@@ -326,15 +334,9 @@ def process_episode(slug: str, episode_id: str, episode_url: str,
         audio_logger.error(f"[{slug}:{episode_id}] Failed: {e} ({processing_time:.1f}s)")
 
         # Update status to failed
-        data = storage.load_data_json(slug)
-        data['episodes'][episode_id] = {
-            'status': 'failed',
-            'original_url': episode_url,
-            'title': episode_title,
-            'error': str(e),
-            'failed_at': datetime.utcnow().isoformat() + 'Z'
-        }
-        storage.save_data_json(slug, data)
+        db.upsert_episode(slug, episode_id,
+            status='failed',
+            error_message=str(e))
         return False
 
 
@@ -402,6 +404,7 @@ def serve_openapi():
 # ========== RSS Feed Routes ==========
 
 @app.route('/<slug>')
+@log_request_detailed
 def serve_rss(slug):
     """Serve modified RSS feed."""
     feed_map = get_feed_map()
@@ -447,6 +450,7 @@ def serve_rss(slug):
 
 
 @app.route('/episodes/<slug>/<episode_id>.mp3')
+@log_request_detailed
 def serve_episode(slug, episode_id):
     """Serve processed episode audio (JIT processing)."""
     feed_map = get_feed_map()
@@ -466,9 +470,8 @@ def serve_episode(slug, episode_id):
         abort(400)
 
     # Check episode status
-    data = storage.load_data_json(slug)
-    episode_info = data['episodes'].get(episode_id, {})
-    status = episode_info.get('status')
+    episode = db.get_episode(slug, episode_id)
+    status = episode['status'] if episode else None
 
     if status == 'processed':
         file_path = storage.get_episode_path(slug, episode_id)
@@ -526,6 +529,7 @@ def serve_episode(slug, episode_id):
 
 
 @app.route('/health')
+@log_request_detailed
 def health_check():
     """Health check endpoint."""
     try:

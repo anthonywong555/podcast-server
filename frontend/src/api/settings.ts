@@ -27,8 +27,8 @@ export async function getSystemStatus(): Promise<SystemStatus> {
   return apiRequest<SystemStatus>('/system/status');
 }
 
-export async function runCleanup(): Promise<{ message: string; deleted_count: number }> {
-  return apiRequest<{ message: string; deleted_count: number }>('/system/cleanup', {
+export async function runCleanup(): Promise<{ message: string; episodesRemoved: number; spaceFreedMb: number }> {
+  return apiRequest<{ message: string; episodesRemoved: number; spaceFreedMb: number }>('/system/cleanup', {
     method: 'POST',
   });
 }

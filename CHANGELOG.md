@@ -5,6 +5,186 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.48] - 2025-11-29
+
+### Added
+- Enhanced request logging with detailed info
+  - All routes now log: IP address, user-agent, response time (ms), status code
+  - Format: `GET /path 200 45ms [192.168.1.100] [Podcast App/1.0]`
+  - Applied to RSS feeds (`/<slug>`), episodes (`/episodes/*`), health check, and all API routes
+  - Static files (`/ui/*`, `/docs`) excluded to reduce noise
+
+---
+
+## [0.1.47] - 2025-11-29
+
+### Changed
+- Replaced load_data_json/save_data_json patterns with direct database calls in main.py
+  - Eliminates race conditions during concurrent episode processing
+  - More efficient single-episode updates (no longer loads/saves all episodes)
+  - Affected: refresh_rss_feed, process_episode (start/complete/fail), serve_episode
+
+### Added
+- File size display in episode detail UI
+  - Shows processed file size in MB next to duration
+  - Added fileSize to API response and TypeScript types
+
+---
+
+## [0.1.46] - 2025-11-29
+
+### Fixed
+- "Detected Ads" section not showing in episode detail UI
+  - Frontend still referenced `ad_segments` after API cleanup removed it in v0.1.45
+  - Updated EpisodeDetail.tsx to use `adMarkers` field
+
+---
+
+## [0.1.45] - 2025-11-29
+
+### Changed
+- Improved ad detection system prompt for better boundary precision
+  - Added AD START SIGNALS section to capture transitions ("let's take a break", etc.)
+  - Added POST-ROLL ADS section to detect local business ads at end of episodes
+  - Updated example to show transition phrase included in ad segment
+- Longer fade-in after beep (0.8s instead of 0.5s) for smoother return to content
+  - Content fade-out before beep: 0.5s (unchanged)
+  - Content fade-in after beep: 0.8s (was 0.5s)
+  - Beep fades: 0.5s (unchanged)
+- "Run Cleanup" button renamed to "Delete All Episodes"
+  - Now immediately deletes ALL processed episodes (ignores retention period)
+  - Uses double-click confirmation pattern (click once to arm, click again to confirm)
+  - Button turns red when armed, auto-resets after 3 seconds
+
+### Fixed
+- Removed duplicate snake_case fields from episode API response
+  - Removed: original_url, processed_url, ad_segments, ad_count
+  - Kept camelCase equivalents: originalUrl, processedUrl, adMarkers, adsRemoved
+
+---
+
+## [0.1.44] - 2025-11-29
+
+### Fixed
+- Beep replacement only playing for first ad when multiple ads detected
+  - Root cause: ffmpeg input streams can only be used once in filter_complex
+  - Added asplit to create N copies of beep input for N ads
+  - Now all ads get proper beep replacement with fades
+- RETENTION_PERIOD env var being ignored after initial database setup
+  - Env var now takes precedence over database setting
+  - Allows runtime override without database modification
+
+---
+
+## [0.1.43] - 2025-11-29
+
+### Added
+- Audio fading on replacement beep (0.5s fade-in and fade-out)
+  - Creates smoother transitions: content fade-out -> beep fade-in -> beep fade-out -> content fade-in
+- end_text field back in ad detection prompt for debugging ad boundary issues
+  - Shows last 3-5 words Claude identified as the ad ending
+  - Stored in API response for debugging, not used programmatically
+
+### Changed
+- Claude API temperature set to 0.0 (was 0.2)
+  - Makes ad detection deterministic - same transcript produces same results
+  - Fixes ad count varying between reprocesses of the same episode
+
+---
+
+## [0.1.42] - 2025-11-29
+
+### Fixed
+- Audio fading still not working after v0.1.41 fix
+  - Root cause: ffmpeg atrim filter does not reset timestamps
+  - Added asetpts=PTS-STARTPTS after atrim to reset timestamps to 0-based
+  - Without this, afade st= parameter was looking for timestamps that did not exist in the trimmed stream
+
+---
+
+## [0.1.41] - 2025-11-29
+
+### Fixed
+- Audio fading not working due to incorrect ffmpeg afade timing
+  - afade st= parameter was using absolute time instead of trimmed segment time
+  - Now correctly calculates fade start relative to segment duration
+
+---
+
+## [0.1.40] - 2025-11-29
+
+### Fixed
+- Ad detection regression from v0.1.38 (5 ads -> 3 ads)
+  - Removed complex MID-BLOCK BOUNDARY example that overwhelmed Claude
+  - Removed end_text field requirement from output format
+  - Simplified prompt restores ad detection accuracy
+
+### Added
+- Audio fading at ad boundaries (0.5s fade-in/fade-out)
+  - Smooths transitions when ad boundaries are imprecise
+  - Note: Users with custom prompts should reset to default in Settings
+
+---
+
+## [0.1.39] - 2025-11-29
+
+### Fixed
+- Ad detector not parsing "end_text" field from Claude response
+  - Prompt requested end_text but ad_detector.py was not extracting it from response
+  - Now correctly parses and includes end_text in ad segment data
+  - Enables debugging of ad boundary precision issues
+
+---
+
+## [0.1.38] - 2025-11-29
+
+### Changed
+- Improved ad boundary precision in DEFAULT_SYSTEM_PROMPT
+  - Added required "end_text" field to output format (last 3-5 words of ad)
+  - Added concrete MID-BLOCK BOUNDARY example with calculation walkthrough
+  - Helps Claude identify exact ad ending points within timestamp blocks
+  - Note: Users with custom prompts should reset to default in Settings
+
+---
+
+## [0.1.37] - 2025-11-29
+
+### Changed
+- Improved DEFAULT_SYSTEM_PROMPT for better ad detection
+  - Added PRIORITY instruction: "Focus on FINDING all ads first, then refining boundaries"
+  - Added extended sponsor list (1Password, Bitwarden, ThreatLocker, Framer, Vanta, etc.)
+  - Added AD END SIGNALS section for precise boundary detection
+  - Added MID-BLOCK BOUNDARIES guidance for when ads end mid-timestamp
+  - Removed "DO NOT INCLUDE" exclusion list that was causing missed detections
+  - Enhanced REMINDER to not skip ads due to show content in same timestamp block
+  - Note: Users with custom prompts should reset to default in Settings to get improvements
+
+---
+
+## [0.1.36] - 2025-11-29
+
+### Fixed
+- Ad detection returning 0 ads for host-read sponsor segments
+  - Claude was distinguishing between "traditional ads" and "sponsor reads" and excluding the latter
+  - Updated DEFAULT_SYSTEM_PROMPT with explicit instructions that host-read sponsor segments ARE ads
+  - Added CRITICAL section and REMINDER to prevent Claude from excluding naturally-integrated sponsor content
+  - Note: Users with custom system prompts should reset to default in Settings to get the fix
+
+---
+
+## [0.1.35] - 2025-11-29
+
+### Changed
+- Completed filesystem cleanup for transcript and ads data
+  - Removed legacy filesystem fallback in `get_transcript()` - now reads only from database
+  - Removed `delete_transcript()` and `delete_ads_json()` methods (database handles all data)
+  - Simplified `cleanup_episode_files()` to only delete `.mp3` files
+  - Removed filesystem migration code from database initialization
+  - Reprocess endpoint now only clears database (no filesystem delete calls)
+- Filesystem now stores only: artwork, processed mp3, feed.xml
+
+---
+
 ## [0.1.34] - 2025-11-28
 
 ### Changed

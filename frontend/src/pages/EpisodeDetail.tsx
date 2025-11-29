@@ -43,6 +43,12 @@ function EpisodeDetail() {
     return `${minutes}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const formatFileSize = (bytes?: number) => {
+    if (!bytes) return '';
+    const mb = bytes / (1024 * 1024);
+    return `${mb.toFixed(1)} MB`;
+  };
+
   if (isLoading) {
     return <LoadingSpinner className="py-12" />;
   }
@@ -92,6 +98,9 @@ function EpisodeDetail() {
               ) : episode.duration ? (
                 <span>{formatDuration(episode.duration)}</span>
               ) : null}
+              {episode.fileSize && (
+                <span>{formatFileSize(episode.fileSize)}</span>
+              )}
               <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[episode.status]}`}>
                 {episode.status}
               </span>
@@ -119,10 +128,10 @@ function EpisodeDetail() {
         )}
       </div>
 
-      {episode.ad_segments && episode.ad_segments.length > 0 && (
+      {episode.adMarkers && episode.adMarkers.length > 0 && (
         <div className="bg-card rounded-lg border border-border p-6 mb-6">
           <h2 className="text-xl font-semibold text-foreground mb-4">
-            Detected Ads ({episode.ad_segments.length})
+            Detected Ads ({episode.adMarkers.length})
             {episode.timeSaved && episode.timeSaved > 0 && (
               <span className="ml-2 text-base font-normal text-muted-foreground">
                 - {formatDuration(episode.timeSaved)} time saved
@@ -130,7 +139,7 @@ function EpisodeDetail() {
             )}
           </h2>
           <div className="space-y-3">
-            {episode.ad_segments.map((segment, index) => (
+            {episode.adMarkers.map((segment, index) => (
               <div
                 key={index}
                 className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg"

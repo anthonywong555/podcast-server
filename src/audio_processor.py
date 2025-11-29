@@ -34,6 +34,7 @@ DEFAULT_REPLACE_AUDIO = get_replace_audio_path()
 class AudioProcessor:
     def __init__(self, replace_audio_path: str = None):
         self.replace_audio_path = replace_audio_path or DEFAULT_REPLACE_AUDIO
+        self._beep_duration = None  # Cached beep duration
 
     def check_ffmpeg(self) -> bool:
         """Check if FFMPEG is available."""
@@ -60,6 +61,12 @@ class AudioProcessor:
         except Exception as e:
             logger.error(f"Failed to get audio duration: {e}")
         return None
+
+    def get_beep_duration(self) -> float:
+        """Get duration of beep audio (cached)."""
+        if self._beep_duration is None:
+            self._beep_duration = self.get_audio_duration(self.replace_audio_path) or 1.0
+        return self._beep_duration
 
     def remove_ads(self, input_path: str, ad_segments: List[Dict], output_path: str) -> bool:
         """Remove ad segments from audio file."""
@@ -115,25 +122,59 @@ class AudioProcessor:
             current_time = 0
             segment_idx = 0
 
-            for ad in ads:
+            # Fade durations in seconds for smooth ad transitions
+            fade_out_duration = 0.5  # Content fade-out before beep
+            fade_in_duration = 0.8   # Content fade-in after beep (longer ease back)
+            beep_fade_duration = 0.5  # Beep fades stay short
+            beep_duration = self.get_beep_duration()
+
+            # Split beep input into N copies (one per ad) - ffmpeg streams can only be used once
+            num_ads = len(ads)
+            if num_ads > 1:
+                beep_split = f"[1:a]asplit={num_ads}" + "".join(f"[beep_in{i}]" for i in range(num_ads))
+                filter_parts.append(beep_split)
+
+            for i, ad in enumerate(ads):
                 ad_start = ad['start']
                 ad_end = ad['end']
 
-                # Add content before ad
+                # Add content before ad (with fades at boundaries)
                 if ad_start > current_time:
-                    filter_parts.append(f"[0:a]atrim={current_time}:{ad_start}[s{segment_idx}]")
+                    content_duration = ad_start - current_time
+                    # First segment: only fade-out at end
+                    # Subsequent segments: fade-in at start, fade-out at end
+                    if i == 0:
+                        # First content segment - just fade out before ad
+                        if content_duration > fade_out_duration:
+                            filter_parts.append(f"[0:a]atrim={current_time}:{ad_start},asetpts=PTS-STARTPTS,afade=t=out:st={content_duration - fade_out_duration}:d={fade_out_duration}[s{segment_idx}]")
+                        else:
+                            filter_parts.append(f"[0:a]atrim={current_time}:{ad_start},asetpts=PTS-STARTPTS[s{segment_idx}]")
+                    else:
+                        # Content between ads - fade in at start, fade out at end
+                        if content_duration > fade_in_duration + fade_out_duration:
+                            filter_parts.append(f"[0:a]atrim={current_time}:{ad_start},asetpts=PTS-STARTPTS,afade=t=in:d={fade_in_duration},afade=t=out:st={content_duration - fade_out_duration}:d={fade_out_duration}[s{segment_idx}]")
+                        else:
+                            filter_parts.append(f"[0:a]atrim={current_time}:{ad_start},asetpts=PTS-STARTPTS[s{segment_idx}]")
                     concat_parts.append(f"[s{segment_idx}]")
                     segment_idx += 1
 
-                # Add single replacement audio with volume reduction to 40%
-                filter_parts.append(f"[1:a]volume=0.4[beep{segment_idx}]")
+                # Add single replacement audio with fades and volume reduction to 40%
+                # Calculate fade-out start time (beep_duration - beep_fade_duration, minimum 0)
+                beep_fade_out_start = max(0, beep_duration - beep_fade_duration)
+                # Use split copy if multiple ads, otherwise use original input
+                beep_input = f"[beep_in{i}]" if num_ads > 1 else "[1:a]"
+                filter_parts.append(f"{beep_input}afade=t=in:d={beep_fade_duration},afade=t=out:st={beep_fade_out_start}:d={beep_fade_duration},volume=0.4[beep{segment_idx}]")
                 concat_parts.append(f"[beep{segment_idx}]")
 
                 current_time = ad_end
 
-            # Add remaining content after last ad
+            # Add remaining content after last ad (with fade-in)
             if current_time < total_duration:
-                filter_parts.append(f"[0:a]atrim={current_time}:{total_duration}[s{segment_idx}]")
+                content_duration = total_duration - current_time
+                if content_duration > fade_in_duration:
+                    filter_parts.append(f"[0:a]atrim={current_time}:{total_duration},asetpts=PTS-STARTPTS,afade=t=in:d={fade_in_duration}[s{segment_idx}]")
+                else:
+                    filter_parts.append(f"[0:a]atrim={current_time}:{total_duration},asetpts=PTS-STARTPTS[s{segment_idx}]")
                 concat_parts.append(f"[s{segment_idx}]")
 
             # Concatenate all parts

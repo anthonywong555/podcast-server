@@ -8,6 +8,7 @@ function Settings() {
   const [systemPrompt, setSystemPrompt] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
   const [hasChanges, setHasChanges] = useState(false);
+  const [cleanupConfirm, setCleanupConfirm] = useState(false);
 
   const { data: settings, isLoading: settingsLoading } = useQuery({
     queryKey: ['settings'],
@@ -63,8 +64,18 @@ function Settings() {
     mutationFn: runCleanup,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['status'] });
+      setCleanupConfirm(false);
     },
   });
+
+  const handleCleanup = () => {
+    if (cleanupConfirm) {
+      cleanupMutation.mutate();
+    } else {
+      setCleanupConfirm(true);
+      setTimeout(() => setCleanupConfirm(false), 3000);
+    }
+  };
 
   const formatUptime = (seconds: number) => {
     const days = Math.floor(seconds / 86400);
@@ -154,15 +165,23 @@ function Settings() {
         ) : null}
         <div className="mt-4 pt-4 border-t border-border">
           <button
-            onClick={() => cleanupMutation.mutate()}
+            onClick={handleCleanup}
             disabled={cleanupMutation.isPending}
-            className="px-4 py-2 rounded bg-secondary text-secondary-foreground hover:bg-secondary/80 disabled:opacity-50 transition-colors"
+            className={`px-4 py-2 rounded transition-colors disabled:opacity-50 ${
+              cleanupConfirm
+                ? 'bg-destructive text-destructive-foreground hover:bg-destructive/80'
+                : 'bg-secondary text-secondary-foreground hover:bg-secondary/80'
+            }`}
           >
-            {cleanupMutation.isPending ? 'Running...' : 'Run Cleanup'}
+            {cleanupMutation.isPending
+              ? 'Deleting...'
+              : cleanupConfirm
+              ? 'Click again to confirm'
+              : 'Delete All Episodes'}
           </button>
           {cleanupMutation.data && (
             <span className="ml-3 text-sm text-muted-foreground">
-              Deleted {cleanupMutation.data.deleted_count} old episodes
+              Deleted {cleanupMutation.data.episodesRemoved} episodes
             </span>
           )}
         </div>

@@ -149,6 +149,9 @@ class AdDetector:
             system_prompt = self.get_system_prompt()
             user_prompt_template = self.get_user_prompt_template()
 
+            logger.info(f"[{slug}:{episode_id}] Using system prompt ({len(system_prompt)} chars)")
+            logger.debug(f"[{slug}:{episode_id}] System prompt first 200 chars: {system_prompt[:200]}...")
+
             # Format user prompt
             prompt = user_prompt_template.format(
                 podcast_name=podcast_name,
@@ -166,7 +169,7 @@ class AdDetector:
             response = self.client.messages.create(
                 model=model,
                 max_tokens=2000,
-                temperature=0.2,
+                temperature=0.0,
                 system=system_prompt,
                 messages=[{
                     "role": "user",
@@ -233,7 +236,8 @@ class AdDetector:
                                 'start': float(ad['start']),
                                 'end': float(ad['end']),
                                 'confidence': float(ad.get('confidence', 1.0)),
-                                'reason': ad.get('reason', 'Advertisement detected')
+                                'reason': ad.get('reason', 'Advertisement detected'),
+                                'end_text': ad.get('end_text', '')
                             })
 
                     total_ad_time = sum(ad['end'] - ad['start'] for ad in valid_ads)

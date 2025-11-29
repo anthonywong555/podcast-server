@@ -27,15 +27,22 @@ def get_database():
 
 
 def log_request(f):
-    """Decorator to log API requests."""
+    """Decorator to log API requests with detailed info (IP, user-agent, response time)."""
     @wraps(f)
     def decorated(*args, **kwargs):
-        logger.info(f"API {request.method} {request.path}")
+        start_time = time.time()
+        client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+        user_agent = request.headers.get('User-Agent', 'Unknown')[:100]
+
         try:
             result = f(*args, **kwargs)
+            elapsed = (time.time() - start_time) * 1000  # ms
+            status = result.status_code if hasattr(result, 'status_code') else 200
+            logger.info(f"{request.method} {request.path} {status} {elapsed:.0f}ms [{client_ip}] [{user_agent}]")
             return result
         except Exception as e:
-            logger.error(f"API error: {request.method} {request.path} - {e}")
+            elapsed = (time.time() - start_time) * 1000
+            logger.error(f"{request.method} {request.path} ERROR {elapsed:.0f}ms [{client_ip}] - {e}")
             raise
     return decorated
 
@@ -385,29 +392,32 @@ def get_episode(slug, episode_id):
     if status == 'processed':
         status = 'completed'
 
+    # Get file size if processed
+    file_size = None
+    if status == 'completed':
+        storage = get_storage()
+        file_path = storage.get_episode_path(slug, episode_id)
+        if file_path.exists():
+            file_size = file_path.stat().st_size
+
     return json_response({
-        # Frontend expected fields (snake_case)
         'id': episode['episode_id'],
+        'episodeId': episode['episode_id'],
         'title': episode['title'],
         'status': status,
         'published': episode['created_at'],
-        'duration': episode['original_duration'],
-        'ad_count': episode['ads_removed'],
-        'original_url': episode['original_url'],
-        'processed_url': f"{base_url}/episodes/{slug}/{episode_id}.mp3",
-        'ad_segments': ad_markers,
-        'transcript': episode.get('transcript_text'),
-        # Additional fields for backward compatibility (camelCase)
-        'episodeId': episode['episode_id'],
-        'originalUrl': episode['original_url'],
-        'processedUrl': f"{base_url}/episodes/{slug}/{episode_id}.mp3",
         'createdAt': episode['created_at'],
         'processedAt': episode['processed_at'],
+        'duration': episode['original_duration'],
         'originalDuration': episode['original_duration'],
         'newDuration': episode['new_duration'],
+        'originalUrl': episode['original_url'],
+        'processedUrl': f"{base_url}/episodes/{slug}/{episode_id}.mp3",
         'adsRemoved': episode['ads_removed'],
         'timeSaved': time_saved,
+        'fileSize': file_size,
         'adMarkers': ad_markers,
+        'transcript': episode.get('transcript_text'),
         'transcriptAvailable': bool(episode.get('transcript_text')),
         'error': episode.get('error_message'),
         'claudePrompt': episode.get('claude_prompt'),
@@ -449,19 +459,13 @@ def reprocess_episode(slug, episode_id):
         # 1. Delete processed audio file
         storage.delete_processed_file(slug, episode_id)
 
-        # 2. Delete transcript file
-        storage.delete_transcript(slug, episode_id)
-
-        # 3. Delete ads JSON file
-        storage.delete_ads_json(slug, episode_id)
-
-        # 4. Clear episode details from database
+        # 2. Clear episode details from database (transcript, ads, etc.)
         db.clear_episode_details(slug, episode_id)
 
-        # 5. Reset episode status to pending
+        # 3. Reset episode status to pending
         db.reset_episode_status(slug, episode_id)
 
-        # 6. Trigger immediate reprocessing
+        # 4. Trigger immediate reprocessing
         from main import process_episode
         episode_url = episode.get('original_url')
         episode_title = episode.get('title', 'Unknown')
@@ -514,7 +518,7 @@ def get_settings():
             'value': current_model,
             'isDefault': settings.get('claude_model', {}).get('is_default', True)
         },
-        'retentionPeriodMinutes': int(settings.get('retention_period_minutes', {}).get('value', '1440')),
+        'retentionPeriodMinutes': int(os.environ.get('RETENTION_PERIOD') or settings.get('retention_period_minutes', {}).get('value', '1440')),
         'defaults': {
             'systemPrompt': DEFAULT_SYSTEM_PROMPT,
             'claudeModel': DEFAULT_MODEL
@@ -581,9 +585,9 @@ def get_system_status():
     stats = db.get_stats()
     storage_stats = storage.get_storage_stats()
 
-    # Get retention setting
-    retention = int(db.get_setting('retention_period_minutes') or
-                    os.environ.get('RETENTION_PERIOD', '1440'))
+    # Get retention setting - env var takes precedence
+    retention = int(os.environ.get('RETENTION_PERIOD') or
+                    db.get_setting('retention_period_minutes') or '1440')
 
     return json_response({
         'status': 'running',
@@ -615,14 +619,14 @@ def get_system_status():
 @api.route('/system/cleanup', methods=['POST'])
 @log_request
 def trigger_cleanup():
-    """Trigger manual cleanup of old episodes."""
+    """Delete ALL processed episodes immediately (ignores retention period)."""
     db = get_database()
 
-    deleted_count, freed_mb = db.cleanup_old_episodes()
+    deleted_count, freed_mb = db.cleanup_old_episodes(force_all=True)
 
-    logger.info(f"Manual cleanup: {deleted_count} episodes, {freed_mb:.1f} MB freed")
+    logger.info(f"Manual cleanup: {deleted_count} episodes deleted, {freed_mb:.1f} MB freed")
     return json_response({
-        'message': 'Cleanup complete',
+        'message': 'All episodes deleted',
         'episodesRemoved': deleted_count,
         'spaceFreedMb': round(freed_mb, 2)
     })
