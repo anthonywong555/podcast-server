@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.46] - 2025-11-29
+
+### Fixed
+- "Detected Ads" section not showing in episode detail UI
+  - Frontend still referenced `ad_segments` after API cleanup removed it in v0.1.45
+  - Updated EpisodeDetail.tsx to use `adMarkers` field
+
+---
+
 ## [0.1.45] - 2025-11-29
 
 ### Changed

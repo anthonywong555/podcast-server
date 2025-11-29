@@ -119,10 +119,10 @@ function EpisodeDetail() {
         )}
       </div>
 
-      {episode.ad_segments && episode.ad_segments.length > 0 && (
+      {episode.adMarkers && episode.adMarkers.length > 0 && (
         <div className="bg-card rounded-lg border border-border p-6 mb-6">
           <h2 className="text-xl font-semibold text-foreground mb-4">
-            Detected Ads ({episode.ad_segments.length})
+            Detected Ads ({episode.adMarkers.length})
             {episode.timeSaved && episode.timeSaved > 0 && (
               <span className="ml-2 text-base font-normal text-muted-foreground">
                 - {formatDuration(episode.timeSaved)} time saved
@@ -130,7 +130,7 @@ function EpisodeDetail() {
             )}
           </h2>
           <div className="space-y-3">
-            {episode.ad_segments.map((segment, index) => (
+            {episode.adMarkers.map((segment, index) => (
               <div
                 key={index}
                 className="flex items-center justify-between p-3 bg-secondary/50 rounded-lg"

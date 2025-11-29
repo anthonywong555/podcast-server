@@ -22,10 +22,10 @@ export interface Episode {
 
 export interface EpisodeDetail extends Episode {
   description?: string;
-  original_url?: string;
-  processed_url?: string;
+  originalUrl?: string;
+  processedUrl?: string;
   transcript?: string;
-  ad_segments?: AdSegment[];
+  adMarkers?: AdSegment[];
   originalDuration?: number;
   newDuration?: number;
   timeSaved?: number;
