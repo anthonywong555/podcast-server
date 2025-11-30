@@ -70,7 +70,7 @@ class RSSParser:
             lines.append(f'<image>')
             lines.append(f'  <url>{self._escape_xml(channel.image.get("href", ""))}</url>')
             lines.append(f'  <title>{channel.image.get("title", "")}</title>')
-            lines.append(f'  <link>{channel.image.get("link", "")}</link>')
+            lines.append(f'  <link>{self._escape_xml(channel.image.get("link", ""))}</link>')
             lines.append(f'</image>')
 
         # Process each episode
@@ -93,7 +93,7 @@ class RSSParser:
             lines.append('<item>')
             lines.append(f'  <title>{self._escape_xml(entry.get("title", ""))}</title>')
             lines.append(f'  <description>{self._escape_xml(entry.get("description", ""))}</description>')
-            lines.append(f'  <link>{entry.get("link", "")}</link>')
+            lines.append(f'  <link>{self._escape_xml(entry.get("link", ""))}</link>')
             lines.append(f'  <guid>{entry.get("id", episode_url)}</guid>')
             lines.append(f'  <pubDate>{entry.get("published", "")}</pubDate>')
 
