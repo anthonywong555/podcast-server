@@ -60,7 +60,7 @@ class RSSParser:
         channel = feed.feed
         lines.append(f'<title>{channel.get("title", "")}</title>')
         lines.append(f'<link>{channel.get("link", "")}</link>')
-        lines.append(f'<description>{channel.get("description", "")}</description>')
+        lines.append(f'<description>{self._escape_xml(channel.get("description", ""))}</description>')
         lines.append(f'<language>{channel.get("language", "en")}</language>')
 
         # Mark as private feed for personal use only
@@ -68,7 +68,7 @@ class RSSParser:
 
         if 'image' in channel:
             lines.append(f'<image>')
-            lines.append(f'  <url>{channel.image.get("href", "")}</url>')
+            lines.append(f'  <url>{self._escape_xml(channel.image.get("href", ""))}</url>')
             lines.append(f'  <title>{channel.image.get("title", "")}</title>')
             lines.append(f'  <link>{channel.image.get("link", "")}</link>')
             lines.append(f'</image>')
