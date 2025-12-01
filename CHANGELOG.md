@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.54] - 2025-12-01
+
+### Fixed
+- Fixed `adsRemovedFirstPass` and `adsRemovedSecondPass` count calculation
+  - Previous: calculated as `total - firstPassCount` which gave negative/incorrect values after merging
+  - New: counts based on actual `pass` field in merged results
+  - `first_pass_count = first_only + merged` (ads found by first pass)
+  - `second_pass_count = second_only + merged` (ads found by second pass)
+- Improved logging to show breakdown: `first:X, second:Y, merged:Z`
+
+---
+
 ## [0.1.53] - 2025-12-01
 
 ### Changed

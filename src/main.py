@@ -325,10 +325,20 @@ def process_episode(slug: str, episode_id: str, episode_url: str,
                 if second_pass_ads:
                     # Merge and deduplicate ads from both passes
                     all_ads = merge_and_deduplicate(first_pass_ads, second_pass_ads)
-                    second_pass_count = len(all_ads) - first_pass_count  # Unique new ads from second pass
+
+                    # Calculate counts based on pass field in merged results
+                    # pass=1: first pass only, pass=2: second pass only, pass='merged': both found
+                    first_pass_only = sum(1 for ad in all_ads if ad.get('pass') == 1)
+                    second_pass_only = sum(1 for ad in all_ads if ad.get('pass') == 2)
+                    merged_count = sum(1 for ad in all_ads if ad.get('pass') == 'merged')
+
+                    # Update counts: first_pass_count = first_only + merged, second_pass_count = second_only + merged
+                    first_pass_count = first_pass_only + merged_count
+                    second_pass_count = second_pass_only + merged_count
 
                     total_ad_time = sum(ad['end'] - ad['start'] for ad in all_ads)
-                    audio_logger.info(f"[{slug}:{episode_id}] Second pass found {second_pass_count} additional unique ads (total: {len(all_ads)}, {total_ad_time/60:.1f} min)")
+                    audio_logger.info(f"[{slug}:{episode_id}] After merge: {len(all_ads)} ads "
+                                     f"(first:{first_pass_only}, second:{second_pass_only}, merged:{merged_count}, {total_ad_time/60:.1f} min)")
 
                     # Save combined ad markers
                     storage.save_combined_ads(slug, episode_id, all_ads)
