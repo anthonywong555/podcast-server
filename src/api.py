@@ -339,6 +339,7 @@ def list_episodes(slug):
             # Frontend expected fields
             'id': ep['episode_id'],
             'title': ep['title'],
+            'description': ep.get('description'),
             'status': status,
             'published': ep['created_at'],
             'duration': ep['original_duration'],
@@ -404,6 +405,7 @@ def get_episode(slug, episode_id):
         'id': episode['episode_id'],
         'episodeId': episode['episode_id'],
         'title': episode['title'],
+        'description': episode.get('description'),
         'status': status,
         'published': episode['created_at'],
         'createdAt': episode['created_at'],
@@ -472,14 +474,31 @@ def reprocess_episode(slug, episode_id):
 
         # 4. Trigger immediate reprocessing
         from main import process_episode
+        from rss_parser import RSSParser
+
         episode_url = episode.get('original_url')
         episode_title = episode.get('title', 'Unknown')
 
         podcast = db.get_podcast_by_slug(slug)
         podcast_name = podcast.get('title', slug) if podcast else slug
 
+        # Fetch episode description from RSS if available
+        episode_description = None
+        if podcast and podcast.get('source_url'):
+            try:
+                rss_parser = RSSParser()
+                feed_content = rss_parser.fetch_feed(podcast['source_url'])
+                if feed_content:
+                    episodes = rss_parser.extract_episodes(feed_content)
+                    for ep in episodes:
+                        if ep['id'] == episode_id:
+                            episode_description = ep.get('description')
+                            break
+            except Exception as e:
+                logger.warning(f"Could not fetch episode description: {e}")
+
         logger.info(f"Starting reprocess: {slug}:{episode_id}")
-        success = process_episode(slug, episode_id, episode_url, episode_title, podcast_name)
+        success = process_episode(slug, episode_id, episode_url, episode_title, podcast_name, episode_description)
 
         if success:
             return json_response({

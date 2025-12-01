@@ -14,6 +14,7 @@ export interface Feed {
 export interface Episode {
   id: string;
   title: string;
+  description?: string;
   published: string;
   duration?: number;
   status: 'pending' | 'processing' | 'completed' | 'failed';

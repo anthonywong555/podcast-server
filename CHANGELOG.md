@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.55] - 2025-12-01
+
+### Fixed
+- Improved ad segment end time detection in second pass prompt
+  - Added explicit instructions for finding COMPLETE ad segments
+  - Ads under 45 seconds now trigger verification prompt for true end time
+  - Added AD END SIGNALS guidance (transitions, topic returns, stingers)
+  - Root cause: DEEL ad detected as 29s when actual duration was 92s
+
+### Added
+- Episode descriptions now available in UI and API
+  - Descriptions extracted from RSS feed and stored in database
+  - Displayed below episode title in list and detail views
+  - Passed to Claude for ad detection (helps identify sponsors, chapters)
+  - HTML tags stripped for clean display
+- Short ad duration warning in logs
+  - Warns when detected ads are under 30 seconds (typical ads are 60-120s)
+  - Helps identify potentially incomplete ad segment detection
+
+### Changed
+- Enhanced `BLIND_SECOND_PASS_SYSTEM_PROMPT` with boundary detection guidance
+- `USER_PROMPT_TEMPLATE` now includes optional episode description field
+- Database schema: added `description` column to episodes table
+
+---
+
 ## [0.1.54] - 2025-12-01
 
 ### Fixed

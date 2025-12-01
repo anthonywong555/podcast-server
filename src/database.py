@@ -186,6 +186,7 @@ CREATE TABLE IF NOT EXISTS episodes (
     episode_id TEXT NOT NULL,
     original_url TEXT NOT NULL,
     title TEXT,
+    description TEXT,
     status TEXT DEFAULT 'pending' CHECK(status IN ('pending','processing','processed','failed')),
     processed_file TEXT,
     processed_at TEXT,
@@ -393,6 +394,18 @@ class Database:
                 logger.info("Migration: Added ads_removed_secondpass column to episodes table")
             except Exception as e:
                 logger.error(f"Migration failed for ads_removed_secondpass: {e}")
+
+        # Migration: Add description column if missing
+        if 'description' not in columns:
+            try:
+                conn.execute("""
+                    ALTER TABLE episodes
+                    ADD COLUMN description TEXT
+                """)
+                conn.commit()
+                logger.info("Migration: Added description column to episodes table")
+            except Exception as e:
+                logger.error(f"Migration failed for description: {e}")
 
     def _migrate_from_json(self):
         """Migrate data from JSON files to SQLite."""
@@ -701,7 +714,7 @@ class Database:
                 fields = []
                 values = []
                 for key, value in kwargs.items():
-                    if key in ('original_url', 'title', 'status', 'processed_file',
+                    if key in ('original_url', 'title', 'description', 'status', 'processed_file',
                                'processed_at', 'original_duration', 'new_duration',
                                'ads_removed', 'ads_removed_firstpass', 'ads_removed_secondpass',
                                'error_message', 'ad_detection_status'):
@@ -720,16 +733,17 @@ class Database:
             # Insert new episode
             cursor = conn.execute(
                 """INSERT INTO episodes
-                   (podcast_id, episode_id, original_url, title, status,
+                   (podcast_id, episode_id, original_url, title, description, status,
                     processed_file, processed_at, original_duration,
                     new_duration, ads_removed, ads_removed_firstpass, ads_removed_secondpass,
                     error_message, ad_detection_status)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     podcast_id,
                     episode_id,
                     kwargs.get('original_url', ''),
                     kwargs.get('title'),
+                    kwargs.get('description'),
                     kwargs.get('status', 'pending'),
                     kwargs.get('processed_file'),
                     kwargs.get('processed_at'),

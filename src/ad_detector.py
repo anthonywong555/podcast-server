@@ -14,9 +14,10 @@ logger = logging.getLogger('podcast.claude')
 DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
 
 # User prompt template (not configurable via UI - just formats the transcript)
+# Description is optional - may contain sponsor lists, chapter markers, or content context
 USER_PROMPT_TEMPLATE = """Podcast: {podcast_name}
 Episode: {episode_title}
-
+{description_section}
 Transcript:
 {transcript}"""
 
@@ -63,6 +64,20 @@ DETECTION SIGNALS:
 - "Link in description/show notes"
 - Sudden product tangents unrelated to episode topic
 - Tonal shifts to more "scripted" delivery
+
+CRITICAL - AD SEGMENT BOUNDARIES:
+- Find the COMPLETE ad segment from start to finish
+- The END time must be when regular content RESUMES, not when the product pitch ends
+- Sponsor reads typically last 60-120 seconds - if your segment is under 45 seconds, verify you found the true end
+- Look for: return to episode topic, host banter resuming, different subject matter
+- Do NOT end the segment mid-pitch - include the full sponsor message and any closing CTA
+
+AD END SIGNALS (look for these AFTER the pitch):
+- "Now back to..." or "Anyway..." or "So..." transitions back to content
+- Return to episode topic or guest conversation
+- Musical stingers or segment transition sounds
+- Complete promo code/URL delivery (they usually close the ad)
+- Host saying "alright" or "okay" before resuming normal content
 
 BE AGGRESSIVE: If it sounds even slightly promotional, mark it. False positives are better than misses.
 
@@ -134,6 +149,16 @@ def merge_and_deduplicate(first_pass: List[Dict], second_pass: List[Dict]) -> Li
             merged.append(current.copy())
             if current.get('pass') == 2:
                 logger.info(f"Second pass found new ad: {current['start']:.1f}s - {current['end']:.1f}s ({current.get('reason', 'unknown')})")
+
+    # Validate ad durations - warn about suspiciously short ads
+    MIN_TYPICAL_AD_DURATION = 30.0  # Most sponsor reads are 60-120 seconds
+    for ad in merged:
+        duration = ad['end'] - ad['start']
+        if duration < MIN_TYPICAL_AD_DURATION:
+            logger.warning(
+                f"Short ad detected ({duration:.1f}s): {ad['start']:.1f}s - {ad['end']:.1f}s - "
+                f"may have incomplete end time. Reason: {ad.get('reason', 'unknown')}"
+            )
 
     return merged
 
@@ -261,7 +286,7 @@ class AdDetector:
 
     def detect_ads(self, segments: List[Dict], podcast_name: str = "Unknown",
                    episode_title: str = "Unknown", slug: str = None,
-                   episode_id: str = None) -> Optional[Dict]:
+                   episode_id: str = None, episode_description: str = None) -> Optional[Dict]:
         """Detect ad segments using Claude API with retry logic for transient errors."""
         if not self.api_key:
             logger.warning("Skipping ad detection - no API key")
@@ -287,10 +312,15 @@ class AdDetector:
             logger.info(f"[{slug}:{episode_id}] Using system prompt ({len(system_prompt)} chars)")
             logger.debug(f"[{slug}:{episode_id}] System prompt first 200 chars: {system_prompt[:200]}...")
 
-            # Format user prompt
+            # Format user prompt with optional description
+            description_section = ""
+            if episode_description:
+                description_section = f"Description: {episode_description}\n"
+
             prompt = user_prompt_template.format(
                 podcast_name=podcast_name,
                 episode_title=episode_title,
+                description_section=description_section,
                 transcript=transcript
             )
 
@@ -440,9 +470,9 @@ class AdDetector:
 
     def process_transcript(self, segments: List[Dict], podcast_name: str = "Unknown",
                           episode_title: str = "Unknown", slug: str = None,
-                          episode_id: str = None) -> Dict:
+                          episode_id: str = None, episode_description: str = None) -> Dict:
         """Process transcript for ad detection."""
-        result = self.detect_ads(segments, podcast_name, episode_title, slug, episode_id)
+        result = self.detect_ads(segments, podcast_name, episode_title, slug, episode_id, episode_description)
         if result is None:
             return {"ads": [], "status": "failed", "error": "Detection failed", "retryable": True}
         return result
@@ -458,7 +488,8 @@ class AdDetector:
 
     def detect_ads_second_pass(self, segments: List[Dict],
                                podcast_name: str = "Unknown", episode_title: str = "Unknown",
-                               slug: str = None, episode_id: str = None) -> Optional[Dict]:
+                               slug: str = None, episode_id: str = None,
+                               episode_description: str = None) -> Optional[Dict]:
         """Blind second pass ad detection with different focus (subtle/baked-in ads)."""
         if not self.api_key:
             logger.warning("Skipping second pass - no API key")
@@ -480,10 +511,15 @@ class AdDetector:
             # Use blind second pass prompt - no knowledge of first pass results
             system_prompt = BLIND_SECOND_PASS_SYSTEM_PROMPT
 
-            # Format user prompt
+            # Format user prompt with optional description
+            description_section = ""
+            if episode_description:
+                description_section = f"Description: {episode_description}\n"
+
             prompt = USER_PROMPT_TEMPLATE.format(
                 podcast_name=podcast_name,
                 episode_title=episode_title,
+                description_section=description_section,
                 transcript=transcript
             )
 

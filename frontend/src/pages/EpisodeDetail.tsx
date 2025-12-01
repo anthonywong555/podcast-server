@@ -116,7 +116,9 @@ function EpisodeDetail() {
         </div>
 
         {episode.description && (
-          <p className="mt-4 text-muted-foreground">{episode.description}</p>
+          <p className="mt-4 text-muted-foreground">
+            {episode.description.replace(/<[^>]*>/g, '')}
+          </p>
         )}
 
         {episode.status === 'completed' && (
