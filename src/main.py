@@ -98,7 +98,7 @@ app.register_blueprint(api_blueprint)
 from storage import Storage
 from rss_parser import RSSParser
 from transcriber import Transcriber
-from ad_detector import AdDetector, merge_and_deduplicate
+from ad_detector import AdDetector, merge_and_deduplicate, refine_ad_boundaries, merge_same_sponsor_ads
 from audio_processor import AudioProcessor
 from database import Database
 
@@ -346,6 +346,15 @@ def process_episode(slug: str, episode_id: str, episode_url: str,
                     storage.save_combined_ads(slug, episode_id, all_ads)
                 else:
                     audio_logger.info(f"[{slug}:{episode_id}] Second pass: No additional ads found")
+
+            # Step 3.5: Refine ad boundaries using word timestamps and keyword detection
+            if all_ads and segments:
+                all_ads = refine_ad_boundaries(all_ads, segments)
+
+            # Step 3.6: Merge ads that mention the same sponsor with sponsor content in gaps
+            # This handles Claude fragmenting long ads or mislabeling parts
+            if all_ads and segments:
+                all_ads = merge_same_sponsor_ads(all_ads, segments)
 
             # Step 4: Process audio ONCE with ALL detected ads
             audio_logger.info(f"[{slug}:{episode_id}] Starting FFMPEG processing ({len(all_ads)} total ads)")

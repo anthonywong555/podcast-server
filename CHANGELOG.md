@@ -5,6 +5,134 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.64] - 2025-12-01
+
+### Changed
+- Moved episode description below playback bar in episode detail view
+  - Audio player now appears immediately after title/metadata
+  - Description follows below for better UX (play first, read second)
+
+---
+
+## [0.1.63] - 2025-12-01
+
+### Fixed
+- Same-sponsor merge now works for short gaps without requiring sponsor mention in gap
+  - If gap < 120 seconds AND both ads mention same sponsor: merge unconditionally
+  - This fixes cases where transition content between ad parts doesn't mention sponsor
+  - Example: Vention ad with 46s gap of "Mike Elgin" intro content now merges correctly
+
+### Changed
+- Sponsor extraction now also parses ad reason field
+  - Extracts brand name from "Vention sponsor read" -> "vention"
+  - Helps identify same-sponsor ads even when transcript doesn't have clear URL
+
+---
+
+## [0.1.62] - 2025-12-01
+
+### Added
+- Same-sponsor ad merging to fix fragmented ad detection
+  - Extracts sponsor names from transcript (URLs, domain mentions)
+  - If two ads mention same sponsor AND gap between them also mentions that sponsor, merge them
+  - Fixes cases where Claude fragments long ads into pieces or mislabels parts
+  - Example: Vention ad split into 3 parts with "Zapier" mislabel now merges correctly
+
+### Technical
+- New `extract_sponsor_names()` function - finds sponsors via URL/domain patterns
+- New `get_transcript_text_for_range()` - gets transcript text for time ranges
+- New `merge_same_sponsor_ads()` - merges ads with same sponsor in gap content
+- Max gap of 5 minutes for sponsor-based merging
+- Runs after boundary refinement, before audio processing
+
+---
+
+## [0.1.61] - 2025-12-01
+
+### Added
+- Intelligent ad boundary detection using word timestamps and keyword scanning
+  - Whisper now returns word-level timestamps (without splitting segments)
+  - Post-processing scans for transition phrases near detected ad boundaries
+  - Transition phrases like "let's take a break", "word from our sponsor" adjust START time
+  - Return phrases like "anyway", "back to the show" adjust END time
+  - Falls back to segment-level boundaries if no keywords found
+  - Adapts to each podcast's style instead of using hardcoded buffers
+
+### Technical
+- New `refine_ad_boundaries()` function in ad_detector.py
+- AD_START_PHRASES and AD_END_PHRASES constants for keyword detection
+- Word timestamps stored with segments but segments not split (avoids v0.1.59 issues)
+- Refinement runs after merge_and_deduplicate(), before audio processing
+
+---
+
+## [0.1.60] - 2025-12-01
+
+### Fixed
+- Episode descriptions now have ALL blank lines removed (single-spaced)
+  - Previous regex collapsed to paragraph breaks; now removes all blank lines
+- Reverted segment splitting from v0.1.59 - it made ad detection WORSE
+  - v0.1.59: Splitting disconnected transition phrases from sponsor content
+  - Vention ad went from wrong END (26:04-26:34) to wrong START (27:51-28:19)
+  - Original 45s segments were fine for finding ad START; problem was finding END
+- Rate limit handling improved for 429 errors
+  - Now waits 60 seconds for rate limit window to reset before retry
+  - Both first and second pass have this handling
+
+### Changed
+- Ad extension heuristic improved
+  - Threshold increased from 60s to 90s (detect more potentially incomplete ads)
+  - Extension increased from 30s to 45s (catch more of the actual ad content)
+- Streamlined system prompt (~70% size reduction)
+  - Removed redundant "find all ads" messaging (repeated 5+ times)
+  - Removed second example
+  - Consolidated AD END guidance sections
+  - Removed REMINDER sections that repeated earlier content
+  - Kept brand lists (helpful for detection)
+  - Result: ~3KB prompt instead of ~11KB, fewer tokens consumed
+
+---
+
+## [0.1.59] - 2025-12-01
+
+### Fixed
+- Improved whitespace collapsing in episode description display
+  - Better regex that handles consecutive whitespace-only lines
+  - Previous regex only handled pairs, not runs of blank lines
+
+### Changed
+- Dramatically improved ad detection precision with finer transcript granularity
+  - **Root cause**: Whisper VAD was creating 45+ second segments, making precise ad boundaries impossible
+  - Enabled word-level timestamps in Whisper transcription
+  - Added segment splitting: long segments (>15s) are now split on word boundaries
+  - Result: ~3x more segments but much more precise ad start/end detection
+- Added automatic extension for short ads that end on URLs
+  - If ad is under 60s and end_text contains a URL, extend by 30s
+  - Safety net for cases where Claude still ends too early at first URL mention
+
+---
+
+## [0.1.58] - 2025-12-01
+
+### Fixed
+- Improved newline collapsing in episode description display
+  - Now handles lines containing only whitespace (spaces/tabs)
+  - Previous regex only matched truly empty lines
+
+### Added
+- end_text logging for ad detection debugging
+  - Logs the last 50 chars of end_text for each detected ad segment
+  - Helps understand why Claude thinks an ad ended where it did
+
+### Changed
+- Enhanced AD END SIGNALS guidance in both prompts
+  - Added explicit "FINDING THE TRUE AD END" section
+  - Clarifies that ad ends when SHOW CONTENT resumes, not when pitch ends
+  - Lists signals to look for AFTER the pitch (topic change, "anyway", etc.)
+  - Lists what NOT to end on (first URL, product description, pauses)
+
+---
+
 ## [0.1.57] - 2025-12-01
 
 ### Fixed

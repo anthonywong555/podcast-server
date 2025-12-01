@@ -13,154 +13,45 @@ logger = logging.getLogger(__name__)
 # Default ad detection prompts
 DEFAULT_SYSTEM_PROMPT = """Analyze this podcast transcript and identify ALL advertisement segments.
 
-IMPORTANT: Podcasts ALWAYS contain advertisements. You should expect to find multiple ad segments in every episode. If you detect zero ads, re-analyze the transcript - you likely missed host-read sponsor segments or subtle product mentions. An empty result is almost never correct.
-
-CRITICAL: Host-read sponsor segments ARE advertisements. Do NOT distinguish between "traditional ads" and "sponsor reads" - both must be detected and returned. Any content where the host promotes a product, service, or sponsor for compensation is an ad, regardless of how naturally it's integrated.
-
-PRIORITY: Focus on FINDING all ads first, then refining boundaries. It is better to include an ad with imprecise boundaries than to miss it entirely.
-
-DETECTION BIAS: When in doubt, mark it as an ad. False positives (marking content as an ad) are preferred over false negatives (missing an ad). Short promotional segments (15-30 seconds) are still ads and must be detected.
+DETECTION RULES:
+- Host-read sponsor segments ARE ads. Any product promotion for compensation is an ad.
+- When in doubt, mark it as an ad. False positives are preferred over missing ads.
+- Include the transition phrase ("let's take a break") in the ad segment, not just the pitch.
+- Ad breaks typically last 60-120 seconds. Shorter segments may indicate incomplete detection.
 
 WHAT TO LOOK FOR:
+- Transitions: "This episode is brought to you by...", "A word from our sponsors", "Let's take a break"
+- Promo codes, vanity URLs (example.com/podcast), calls to action
 - Product endorsements, sponsored content, promotional messages
-- Promo codes, special offers, discount codes, calls to action
-- Transitions to/from ads (e.g., "This episode is brought to you by...", "Support for this podcast comes from...", "A word from our sponsors")
-- Host-read advertisements, pre-roll, mid-roll, post-roll ads
-- Cross-promotion of other podcasts/shows from the network
-- Sponsor messages about products, apps, services, websites
-- Vanity URLs (e.g., "visit example.com/podcastname")
+- Network-inserted retail ads (may sound like radio commercials)
 
 COMMON PODCAST SPONSORS (high confidence if mentioned):
 BetterHelp, Athletic Greens, AG1, Shopify, Amazon, Audible, Squarespace, HelloFresh, Factor, NordVPN, ExpressVPN, Mint Mobile, MasterClass, Calm, Headspace, ZipRecruiter, Indeed, LinkedIn Jobs, LinkedIn, Stamps.com, SimpliSafe, Ring, ADT, Casper, Helix Sleep, Purple, Brooklinen, Bombas, Manscaped, Dollar Shave Club, Harry's, Quip, Hims, Hers, Roman, Keeps, Function of Beauty, Native, Liquid IV, Athletic Brewing, Magic Spoon, Thrive Market, Butcher Box, Blue Apron, DoorDash, Uber Eats, Grubhub, Instacart, Rocket Money, Credit Karma, SoFi, Acorns, Betterment, Wealthfront, PolicyGenius, Lemonade, State Farm, Progressive, Geico, Liberty Mutual, T-Mobile, Visible, FanDuel, DraftKings, BetMGM, Toyota, Hyundai, CarMax, Carvana, eBay Motors, ZocDoc, GoodRx, Care/of, Ritual, Seed, HubSpot, NetSuite, Monday.com, Notion, Canva, Grammarly, Babbel, Rosetta Stone, Blinkist, Raycon, Bose, MacPaw, CleanMyMac, Green Chef, Magic Mind, Honeylove, Cozy Earth, Quince, LMNT, Nutrafol, Aura, OneSkin, Incogni, Gametime, 1Password, Bitwarden, CacheFly, Deel, DeleteMe, Framer, Miro, Monarch Money, OutSystems, Spaceship, Thinkst Canary, ThreatLocker, Vanta, Veeam, Zapier, Zscaler, Capital One, Ford, WhatsApp
 
-RETAIL/CONSUMER BRANDS (also high confidence - network-inserted ads):
+RETAIL/CONSUMER BRANDS (network-inserted ads):
 Nordstrom, Macy's, Target, Walmart, Kohl's, Bloomingdale's, JCPenney, TJ Maxx, Home Depot, Lowe's, Best Buy, Costco, Gap, Old Navy, H&M, Zara, Nike, Adidas, Lululemon, Coach, Kate Spade, Michael Kors, Sephora, Ulta, Bath & Body Works, CVS, Walgreens, AutoZone, O'Reilly Auto Parts, Jiffy Lube, Midas, Gold Belly, Farmer's Dog, Caldera Lab, Monster Energy, Red Bull, Whole Foods, Trader Joe's, Kroger
 
-COMMON AD PHRASES:
-- "Use code [NAME] at checkout"
-- "Visit [brand].com/[podcastname]"
-- "Get X% off with promo code"
-- "Free trial at..."
-- "Click the link in the description"
-- "Thanks to [brand] for sponsoring"
-- "This portion brought to you by"
-
-RETAIL/COMMERCIAL AD INDICATORS:
-- Shopping calls-to-action: "shop at", "find it at", "visit us", "in stores or online", "shop now", "it's time to go shopping"
-- Free shipping/returns language: "free shipping", "free returns", "quick pickup", "same-day delivery"
-- Fashion/apparel terminology: "styles", "looks", "outfits", "fits", "dresses", "accessories", "heels"
-- Promotional enthusiasm: "Oh what fun!", "You'll love", "You'll find", "Discover", "Explore"
-- Holiday/seasonal hooks: "Holiday", "Black Friday", "Cyber Monday", "Back to school", "Summer sale"
-- Price mentions: "under $X", "starting at", "X% off", "sale prices", "styles under 100"
-- Store location language: "At your local", "Visit our store", "locations near you"
-
-NETWORK/RADIO-STYLE ADS:
-These ads may NOT sound like typical host-read content. Identify them by:
-- Produced/polished audio quality (sounds like a radio commercial)
-- Third-party voice (not the podcast hosts)
-- Brand-focused messaging without podcast-specific elements (no promo codes, no vanity URLs)
-- Promotional/advertising tone and language
-- Product descriptions and shopping CTAs
-
-IMPORTANT: These are still ads and MUST be detected, even without:
-- "Brought to you by" transitions
-- Podcast-specific promo codes
-- Vanity URLs like "[brand].com/[podcast]"
-- Host involvement
-
-If content sounds like a retail commercial, car dealership ad, or local business spot, it IS an ad.
-
-AD END SIGNALS (ad typically ends after the LAST of these):
-- Final URL mention: "...example.com" or "that's [URL]"
-- Final call-to-action: "Get started now at...", "Visit...", "Go to..."
-- Final promo code mention
-- Repeated URL: "That's [URL]" or "Again, that's [URL]"
-
-AD START SIGNALS (ad segment starts AT or BEFORE these phrases):
-- "Let's take a break", "We'll be right back", "A word from our sponsors"
-- "...and we'll get back to that in just a moment"
-- "This episode/show is brought to you by...", "Thanks to [brand] for sponsoring"
-- IMPORTANT: Include the transition phrase in the ad segment, not just the product pitch
-
-AD CHARACTERISTICS:
-- Ad breaks typically last 15-120 seconds
-- Pre-roll ads appear before the intro, mid-roll during the episode, post-roll after the outro
-- Multiple back-to-back sponsor reads should be merged into one segment
-
-POST-ROLL ADS:
-- Often start immediately after "Thanks for listening" or similar outro
-- May include multiple back-to-back local/network ads (car dealers, plumbing, appliances)
-- If ads continue to the END of the audio, set end time to the final timestamp
-- Common indicators: phone numbers, local business names, "call now" CTAs
-
-MERGING RULES:
-1. Multiple ads separated by gaps of 15 seconds or less = ONE CONTINUOUS SEGMENT
-2. Only split if there's REAL SHOW CONTENT (30+ seconds of actual discussion) between ads
-3. When in doubt, merge segments - better to remove too much than leave ads in
-
-MID-BLOCK BOUNDARIES:
-When a timestamp block contains BOTH ad content AND show content (e.g., ad ends mid-block):
-- Identify the text where the ad ends
-- Estimate proportional end time based on text position in the block
-- Err toward ending earlier rather than including show content
+AD BOUNDARY RULES:
+- AD START: Include transition phrases like "Let's take a break", "A word from our sponsors"
+- AD END: The ad ends when SHOW CONTENT resumes, NOT when the pitch ends. Wait for:
+  - Topic change back to episode content
+  - Host says "anyway", "alright", "so" and changes subject
+  - AFTER the final URL mention (they often repeat it)
+- MERGING: Multiple ads with gaps < 15 seconds = ONE segment
 
 OUTPUT FORMAT:
-Return ONLY a valid JSON array. No explanation, no analysis, no markdown formatting.
+Return ONLY a valid JSON array. No explanation, no markdown.
 
-Each ad segment must include:
-- "start": Start time in seconds
-- "end": End time in seconds
-- "confidence": Confidence score from 0.0 to 1.0 (1.0 = certain it's an ad)
-- "reason": Brief description of why this is an ad
-- "end_text": Last 3-5 words spoken before ad ends (for boundary debugging)
+Each ad segment: {{"start": seconds, "end": seconds, "confidence": 0.0-1.0, "reason": "brief description", "end_text": "last 3-5 words"}}
 
-Format: [{{"start": 0.0, "end": 60.0, "confidence": 0.95, "reason": "Sponsor read for BetterHelp", "end_text": "athleticgreens.com/podcast"}}]
-If no ads found: []
-
-REMINDER: Include ALL advertisements regardless of format:
-- Host-read sponsor segments (conversational or formal)
-- Network-inserted retail/commercial ads (may sound like radio commercials)
-- "Brought to you by" segments
-- Short promotional spots (even 15-30 seconds)
-- Ads without promo codes or vanity URLs
-
-ANY content promoting a product, service, or brand for commercial purposes is an ad. Do not skip ads because:
-- They are short (< 30 seconds)
-- They lack podcast-specific elements (promo codes, vanity URLs)
-- Show content appears in the same timestamp block
-- The brand is not in the known sponsors list
-
-EXAMPLE 1 - Host-Read Sponsor:
-
-Given transcript excerpt:
+EXAMPLE:
 [45.0s - 48.0s] That's a great point. Let's take a quick break.
 [48.5s - 52.0s] This episode is brought to you by Athletic Greens.
-[52.5s - 58.0s] AG1 is the daily foundational nutrition supplement that supports whole body health.
-[58.5s - 65.0s] I've been taking it for years and I love how it simplifies my routine.
-[65.5s - 72.0s] Right now they're offering a free one year supply of vitamin D with your first purchase.
-[72.5s - 78.0s] Go to athleticgreens.com/podcast to claim this offer.
+[52.5s - 78.0s] AG1 is the daily foundational nutrition supplement... Go to athleticgreens.com/podcast.
 [78.5s - 82.0s] That's athleticgreens.com/podcast.
-[82.5s - 86.0s] Now, back to our conversation with Dr. Smith.
+[82.5s - 86.0s] Now, back to our conversation.
 
-Output (note: start at 45.0 includes the transition phrase):
-[{{"start": 45.0, "end": 82.0, "confidence": 0.98, "reason": "Athletic Greens sponsor read with transition and promo URL", "end_text": "athleticgreens.com/podcast"}}]
-
-EXAMPLE 2 - Network/Retail Ad (no host involvement, no promo code):
-
-Given transcript excerpt:
-[180.0s - 183.0s] Thanks so much for joining us today.
-[183.5s - 186.0s] Oh, what fun! Holiday invites are arriving.
-[186.5s - 190.0s] And Nordstrom has your party fits covered.
-[190.5s - 195.0s] You'll find head-to-toe looks for every occasion, including styles under 100.
-[195.5s - 200.0s] Dresses, sets, heels, and accessories from Bardot, Princess Polly, and more.
-[200.5s - 205.0s] Free styling help, free shipping, and quick order pickup make it easy.
-[205.5s - 210.0s] In stores or online, it's time to go shopping at Nordstrom.
-[210.5s - 214.0s] Alright, so getting back to what we were discussing...
-
-Output:
-[{{"start": 183.5, "end": 210.0, "confidence": 0.95, "reason": "Nordstrom retail ad - shopping CTA, promotional language, brand mentions", "end_text": "at Nordstrom"}}]
-
-Note: This ad has NO transition phrase, promo code, or vanity URL - but the promotional retail language and brand mentions clearly identify it as an advertisement."""
+Output: [{{"start": 45.0, "end": 82.0, "confidence": 0.98, "reason": "Athletic Greens sponsor read", "end_text": "athleticgreens.com/podcast"}}]"""
 
 
 SCHEMA_SQL = """
