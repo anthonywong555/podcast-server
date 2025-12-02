@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.66] - 2025-12-02
+
+### Added
+- Independent second pass model selection
+  - New setting `secondPassModel` allows using a different Claude model for second pass
+  - Visible in Settings UI when Multi-Pass Detection is enabled
+  - Defaults to Claude Sonnet 4.5 for cost optimization
+  - API: PUT /settings/ad-detection accepts `secondPassModel` field
+- Sliding window approach for ad detection
+  - Transcripts are now processed in 10-minute overlapping windows
+  - 3-minute overlap between windows to catch ads at chunk boundaries
+  - Applies to both first and second pass detection
+  - Detections across windows are automatically merged and deduplicated
+  - Improves accuracy for long episodes
+
+### Technical
+- New database setting: `second_pass_model`
+- New helper functions: `create_windows()`, `deduplicate_window_ads()`
+- New method: `get_second_pass_model()` in AdDetector class
+- Constants: `WINDOW_SIZE_SECONDS=600`, `WINDOW_OVERLAP_SECONDS=180`
+- Refactored JSON parsing into reusable `_parse_ads_from_response()` method
+
+---
+
 ## [0.1.65] - 2025-12-01
 
 ### Added

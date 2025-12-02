@@ -61,12 +61,14 @@ export interface Settings {
   systemPrompt: SettingValue;
   secondPassPrompt: SettingValue;
   claudeModel: SettingValue;
+  secondPassModel: SettingValue;
   multiPassEnabled: SettingValueBoolean;
   retentionPeriodMinutes: number;
   defaults: {
     systemPrompt: string;
     secondPassPrompt: string;
     claudeModel: string;
+    secondPassModel: string;
     multiPassEnabled: boolean;
   };
 }
@@ -75,6 +77,7 @@ export interface UpdateSettingsPayload {
   systemPrompt?: string;
   secondPassPrompt?: string;
   claudeModel?: string;
+  secondPassModel?: string;
   multiPassEnabled?: boolean;
 }
 

@@ -505,6 +505,14 @@ class Database:
             ('second_pass_prompt', DEFAULT_SECOND_PASS_PROMPT)
         )
 
+        # Second pass model (defaults to Sonnet 4.5)
+        from ad_detector import DEFAULT_MODEL
+        conn.execute(
+            """INSERT INTO settings (key, value, is_default) VALUES (?, ?, 1)
+               ON CONFLICT(key) DO NOTHING""",
+            ('second_pass_model', DEFAULT_MODEL)
+        )
+
         conn.commit()
         logger.info("Default settings seeded")
 
@@ -882,6 +890,7 @@ class Database:
             'second_pass_prompt': DEFAULT_SECOND_PASS_PROMPT,
             'retention_period_minutes': os.environ.get('RETENTION_PERIOD', '1440'),
             'claude_model': DEFAULT_MODEL,
+            'second_pass_model': DEFAULT_MODEL,
             'multi_pass_enabled': 'false'
         }
 

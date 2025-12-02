@@ -8,6 +8,7 @@ function Settings() {
   const [systemPrompt, setSystemPrompt] = useState('');
   const [secondPassPrompt, setSecondPassPrompt] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
+  const [secondPassModel, setSecondPassModel] = useState('');
   const [multiPassEnabled, setMultiPassEnabled] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
   const [cleanupConfirm, setCleanupConfirm] = useState(false);
@@ -32,6 +33,7 @@ function Settings() {
       setSystemPrompt(settings.systemPrompt?.value || '');
       setSecondPassPrompt(settings.secondPassPrompt?.value || '');
       setSelectedModel(settings.claudeModel?.value || '');
+      setSecondPassModel(settings.secondPassModel?.value || '');
       setMultiPassEnabled(settings.multiPassEnabled?.value ?? false);
     }
   }, [settings]);
@@ -42,10 +44,11 @@ function Settings() {
         systemPrompt !== (settings.systemPrompt?.value || '') ||
         secondPassPrompt !== (settings.secondPassPrompt?.value || '') ||
         selectedModel !== (settings.claudeModel?.value || '') ||
+        secondPassModel !== (settings.secondPassModel?.value || '') ||
         multiPassEnabled !== (settings.multiPassEnabled?.value ?? false);
       setHasChanges(changed);
     }
-  }, [systemPrompt, secondPassPrompt, selectedModel, multiPassEnabled, settings]);
+  }, [systemPrompt, secondPassPrompt, selectedModel, secondPassModel, multiPassEnabled, settings]);
 
   const updateMutation = useMutation({
     mutationFn: () =>
@@ -53,6 +56,7 @@ function Settings() {
         systemPrompt,
         secondPassPrompt,
         claudeModel: selectedModel,
+        secondPassModel,
         multiPassEnabled,
       }),
     onSuccess: () => {
@@ -241,6 +245,29 @@ function Settings() {
             Run a second detection pass on processed audio to catch missed ads. Increases processing time and API costs.
           </p>
         </div>
+
+        {multiPassEnabled && (
+          <div className="mt-6 pt-4 border-t border-border">
+            <label htmlFor="secondPassModel" className="block text-sm font-medium text-foreground mb-2">
+              Second Pass Model
+            </label>
+            <select
+              id="secondPassModel"
+              value={secondPassModel}
+              onChange={(e) => setSecondPassModel(e.target.value)}
+              className="w-full px-4 py-2 rounded-lg border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              {models?.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.name}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Model for second pass detection (can differ from first pass for cost optimization)
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="bg-card rounded-lg border border-border p-6">
