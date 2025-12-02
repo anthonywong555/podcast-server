@@ -9,7 +9,7 @@ info:
     - View and manage processed episodes
     - Configure ad detection settings including Claude model selection
     - Monitor system status and trigger cleanup operations
-  version: 0.1.65
+  version: 0.1.67
   contact:
     name: Podcast Server
   license:
@@ -335,7 +335,11 @@ paths:
                   description: System prompt for second pass ad detection (subtle/baked-in ads)
                 claudeModel:
                   type: string
-                  description: Claude model ID to use for ad detection
+                  description: Claude model ID to use for first pass ad detection
+                  example: claude-sonnet-4-5-20250929
+                secondPassModel:
+                  type: string
+                  description: Claude model ID for second pass ad detection (can differ from first pass)
                   example: claude-sonnet-4-5-20250929
                 multiPassEnabled:
                   type: boolean
@@ -610,6 +614,13 @@ components:
               type: string
             isDefault:
               type: boolean
+        secondPassModel:
+          type: object
+          properties:
+            value:
+              type: string
+            isDefault:
+              type: boolean
         multiPassEnabled:
           type: object
           properties:
@@ -628,6 +639,8 @@ components:
             secondPassPrompt:
               type: string
             claudeModel:
+              type: string
+            secondPassModel:
               type: string
             multiPassEnabled:
               type: boolean

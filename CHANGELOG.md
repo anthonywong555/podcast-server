@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.67] - 2025-12-02
+
+### Fixed
+- Removed hardcoded VALID_MODELS validation that rejected valid models like Haiku 4.5
+  - Models are fetched dynamically from Anthropic API, so validation was unnecessary
+  - Any model available in the dropdown is now accepted
+- Updated OpenAPI documentation with secondPassModel field (was missing in 0.1.66)
+
+---
+
 ## [0.1.66] - 2025-12-02
 
 ### Added

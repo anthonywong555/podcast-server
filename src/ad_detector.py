@@ -22,15 +22,6 @@ Episode: {episode_title}
 Transcript:
 {transcript}"""
 
-# Valid model IDs - used to validate saved settings
-VALID_MODELS = [
-    'claude-sonnet-4-5-20250929',
-    'claude-opus-4-5-20251101',
-    'claude-sonnet-4-20250514',
-    'claude-opus-4-1-20250414',
-    'claude-3-5-sonnet-20241022',
-]
-
 # Retry configuration for transient API errors
 RETRY_CONFIG = {
     'max_retries': 3,
@@ -739,20 +730,9 @@ class AdDetector:
         try:
             model = self.db.get_setting('claude_model')
             if model:
-                # Validate that model is in the list of known valid models
-                if model in VALID_MODELS:
-                    return model
-                else:
-                    logger.warning(f"Invalid model '{model}' in database, clearing and using default")
-                    # Clear invalid model from database
-                    try:
-                        self.db.save_setting('claude_model', DEFAULT_MODEL)
-                        logger.info(f"Saved default model '{DEFAULT_MODEL}' to database")
-                    except Exception as clear_err:
-                        logger.warning(f"Could not clear invalid model from DB: {clear_err}")
+                return model
         except Exception as e:
             logger.warning(f"Could not load model from DB: {e}")
-
         return DEFAULT_MODEL
 
     def get_second_pass_model(self) -> str:
@@ -760,14 +740,9 @@ class AdDetector:
         try:
             model = self.db.get_setting('second_pass_model')
             if model:
-                # Validate that model is in the list of known valid models
-                if model in VALID_MODELS:
-                    return model
-                else:
-                    logger.warning(f"Invalid second pass model '{model}' in database, using default")
+                return model
         except Exception as e:
             logger.warning(f"Could not load second pass model from DB: {e}")
-
         return DEFAULT_MODEL
 
     def get_system_prompt(self) -> str:

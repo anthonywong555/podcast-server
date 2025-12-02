@@ -681,12 +681,8 @@ def update_ad_detection_settings():
         logger.info(f"Updated Claude model to: {data['claudeModel']}")
 
     if 'secondPassModel' in data:
-        from ad_detector import VALID_MODELS
-        if data['secondPassModel'] in VALID_MODELS:
-            db.set_setting('second_pass_model', data['secondPassModel'], is_default=False)
-            logger.info(f"Updated second pass model to: {data['secondPassModel']}")
-        else:
-            logger.warning(f"Invalid second pass model: {data['secondPassModel']}")
+        db.set_setting('second_pass_model', data['secondPassModel'], is_default=False)
+        logger.info(f"Updated second pass model to: {data['secondPassModel']}")
 
     if 'multiPassEnabled' in data:
         value = 'true' if data['multiPassEnabled'] else 'false'
