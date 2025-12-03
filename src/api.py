@@ -375,12 +375,20 @@ def get_episode(slug, episode_id):
 
     base_url = os.environ.get('BASE_URL', 'http://localhost:8000')
 
-    # Parse ad markers if present
+    # Parse ad markers if present, separating by validation decision
     ad_markers = []
+    rejected_ad_markers = []
     if episode.get('ad_markers_json'):
         try:
             import json
-            ad_markers = json.loads(episode['ad_markers_json'])
+            all_markers = json.loads(episode['ad_markers_json'])
+            # Separate by validation decision - REJECT ads stayed in audio
+            for marker in all_markers:
+                decision = marker.get('validation', {}).get('decision', 'ACCEPT')
+                if decision == 'REJECT':
+                    rejected_ad_markers.append(marker)
+                else:
+                    ad_markers.append(marker)
         except:
             pass
 
@@ -421,6 +429,7 @@ def get_episode(slug, episode_id):
         'timeSaved': time_saved,
         'fileSize': file_size,
         'adMarkers': ad_markers,
+        'rejectedAdMarkers': rejected_ad_markers,
         'adDetectionStatus': episode.get('ad_detection_status'),
         'transcript': episode.get('transcript_text'),
         'transcriptAvailable': bool(episode.get('transcript_text')),

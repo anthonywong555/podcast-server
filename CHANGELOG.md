@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.73] - 2025-12-02
+
+### Added
+- Post-detection validation layer for ad markers (AdValidator)
+  - Boundary validation: clamps negative start times and end times beyond episode duration
+  - Duration checks: rejects ads <7s or >300s, warns on short (<30s) or long (>180s) segments
+  - Confidence thresholds: rejects very low confidence (<0.3), warns on low (<0.5)
+  - Position heuristics: boosts confidence for typical ad positions (pre-roll, mid-roll, post-roll)
+  - Reason quality: penalizes vague reasons, boosts when sponsor name mentioned
+  - Transcript verification: checks for sponsor names and ad signals in transcript text
+  - Auto-correction: merges ads with <5s gaps, clamps boundaries to valid range
+  - Decision engine: classifies ads as ACCEPT, REVIEW, or REJECT
+  - Ad density warnings: flags if >30% of episode is ads or >1 ad per 5 minutes
+- API now returns rejected ads separately in `rejectedAdMarkers` field
+  - ACCEPT and REVIEW ads are in `adMarkers` (removed from audio)
+  - REJECT ads are in `rejectedAdMarkers` (kept in audio for review)
+- Timestamp precision guidance added to detection prompts
+  - Instructs model to use exact [Xs] timestamps, not interpolate
+
+### Changed
+- Ad removal now only processes ACCEPT and REVIEW validated ads
+- REJECT ads stay in audio but are stored for display in UI
+
+---
+
 ## [0.1.72] - 2025-12-03
 
 ### Fixed

@@ -540,6 +540,12 @@ components:
               format: uri
             adMarkers:
               type: array
+              description: Ads that were removed from audio (ACCEPT or REVIEW decision)
+              items:
+                $ref: '#/components/schemas/AdMarker'
+            rejectedAdMarkers:
+              type: array
+              description: Ads flagged but kept in audio (REJECT decision due to low confidence, invalid duration, etc.)
               items:
                 $ref: '#/components/schemas/AdMarker'
             transcriptAvailable:
@@ -573,6 +579,30 @@ components:
             - string
           description: Which detection pass found this ad (1, 2, or "merged" if both)
           example: 1
+        validation:
+          type: object
+          description: Validation results from post-detection validation layer
+          properties:
+            decision:
+              type: string
+              enum: [ACCEPT, REVIEW, REJECT]
+              description: Validation decision - ACCEPT/REVIEW are removed, REJECT stays in audio
+            adjusted_confidence:
+              type: number
+              description: Confidence after position/content adjustments (0.0 to 1.0)
+            original_confidence:
+              type: number
+              description: Original confidence from Claude detection
+            flags:
+              type: array
+              items:
+                type: string
+              description: Validation warnings or errors
+            corrections:
+              type: array
+              items:
+                type: string
+              description: Auto-corrections applied (merged ads, clamped boundaries)
 
     Model:
       type: object
