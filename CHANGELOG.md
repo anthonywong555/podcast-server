@@ -5,6 +5,104 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.72] - 2025-12-03
+
+### Fixed
+- Wrap descriptions in CDATA to fix invalid XML in RSS feeds
+  - Channel descriptions were not escaped, causing raw HTML and `&nbsp;` entities to break XML parsing
+  - Episode descriptions now also use CDATA for consistency
+  - Fixes Pocket Casts rejecting feeds with HTML in descriptions (e.g., No Agenda, DTNS)
+
+### Changed
+- OpenAPI version is now dynamically injected from version.py
+  - No longer need to manually update openapi.yaml version
+
+---
+
+## [0.1.71] - 2025-12-03
+
+### Fixed
+- Validate iTunes fields before outputting to RSS feed
+  - `itunes:explicit` was outputting Python's `None` as string "None" (invalid XML)
+  - `itunes:duration` could also output `None` in some cases
+  - Now validates `itunes:explicit` against allowed values (true/false/yes/no)
+  - Skips fields with invalid values instead of outputting malformed XML
+  - Fixes Pocket Casts rejecting feeds with invalid iTunes tags
+
+---
+
+## [0.1.70] - 2025-12-03
+
+### Fixed
+- Limited RSS feed to 100 most recent episodes
+  - Large feeds (2000+ episodes, 3MB+) were rejected by Pocket Casts during validation
+  - Feed size now stays under ~500KB, compatible with all podcast apps
+
+---
+
+## [0.1.69] - 2025-12-02
+
+### Fixed
+- Removed `<itunes:block>Yes</itunes:block>` from modified RSS feeds
+  - This tag was preventing podcast apps from subscribing to feeds
+  - Original feeds (e.g., Acast) don't have this tag; it was being added unnecessarily
+
+---
+
+## [0.1.68] - 2025-12-02
+
+### Changed
+- Improved ad detection prompts to reduce false positives
+  - Removed "EXPECT ADS" language that pressured model to invent ads
+  - Made second pass truly blind (no reference to first pass)
+  - Removed cross-promotion from ad detection targets
+  - Added explicit "DO NOT MARK AS ADS" section for cross-promo and guest plugs
+- Added window boundary guidance to prompts
+  - Instructions for handling partial ads at window edges
+  - Clear guidance on marking ads that span window boundaries
+- Enhanced window context in API calls
+  - Clearer formatting with explicit window boundaries
+  - Instructions for partial ad handling
+- Consolidated prompts: removed duplicate BLIND_SECOND_PASS_SYSTEM_PROMPT
+  - Single source of truth in database.py
+- Reduced second pass prompt from ~600 words to ~250 words
+
+---
+
+## [0.1.67] - 2025-12-02
+
+### Fixed
+- Removed hardcoded VALID_MODELS validation that rejected valid models like Haiku 4.5
+  - Models are fetched dynamically from Anthropic API, so validation was unnecessary
+  - Any model available in the dropdown is now accepted
+- Updated OpenAPI documentation with secondPassModel field (was missing in 0.1.66)
+
+---
+
+## [0.1.66] - 2025-12-02
+
+### Added
+- Independent second pass model selection
+  - New setting `secondPassModel` allows using a different Claude model for second pass
+  - Visible in Settings UI when Multi-Pass Detection is enabled
+  - Defaults to Claude Sonnet 4.5 for cost optimization
+  - API: PUT /settings/ad-detection accepts `secondPassModel` field
+- Sliding window approach for ad detection
+  - Transcripts are now processed in 10-minute overlapping windows
+  - 3-minute overlap between windows to catch ads at chunk boundaries
+  - Applies to both first and second pass detection
+  - Detections across windows are automatically merged and deduplicated
+  - Improves accuracy for long episodes
+
+### Technical
+- New database setting: `second_pass_model`
+- New helper functions: `create_windows()`, `deduplicate_window_ads()`
+- New method: `get_second_pass_model()` in AdDetector class
+- Constants: `WINDOW_SIZE_SECONDS=600`, `WINDOW_OVERLAP_SECONDS=180`
+- Refactored JSON parsing into reusable `_parse_ads_from_response()` method
+
+---
+
 ## [0.1.65] - 2025-12-01
 
 ### Added

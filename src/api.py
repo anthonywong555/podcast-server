@@ -617,8 +617,9 @@ def get_settings():
 
     settings = db.get_all_settings()
 
-    # Get current model setting
+    # Get current model settings
     current_model = settings.get('claude_model', {}).get('value', DEFAULT_MODEL)
+    second_pass_model = settings.get('second_pass_model', {}).get('value', DEFAULT_MODEL)
 
     # Get multi-pass setting (defaults to false)
     multi_pass_value = settings.get('multi_pass_enabled', {}).get('value', 'false')
@@ -637,6 +638,10 @@ def get_settings():
             'value': current_model,
             'isDefault': settings.get('claude_model', {}).get('is_default', True)
         },
+        'secondPassModel': {
+            'value': second_pass_model,
+            'isDefault': settings.get('second_pass_model', {}).get('is_default', True)
+        },
         'multiPassEnabled': {
             'value': multi_pass_enabled,
             'isDefault': settings.get('multi_pass_enabled', {}).get('is_default', True)
@@ -646,6 +651,7 @@ def get_settings():
             'systemPrompt': DEFAULT_SYSTEM_PROMPT,
             'secondPassPrompt': DEFAULT_SECOND_PASS_PROMPT,
             'claudeModel': DEFAULT_MODEL,
+            'secondPassModel': DEFAULT_MODEL,
             'multiPassEnabled': False
         }
     })
@@ -674,6 +680,10 @@ def update_ad_detection_settings():
         db.set_setting('claude_model', data['claudeModel'], is_default=False)
         logger.info(f"Updated Claude model to: {data['claudeModel']}")
 
+    if 'secondPassModel' in data:
+        db.set_setting('second_pass_model', data['secondPassModel'], is_default=False)
+        logger.info(f"Updated second pass model to: {data['secondPassModel']}")
+
     if 'multiPassEnabled' in data:
         value = 'true' if data['multiPassEnabled'] else 'false'
         db.set_setting('multi_pass_enabled', value, is_default=False)
@@ -691,6 +701,7 @@ def reset_ad_detection_settings():
     db.reset_setting('system_prompt')
     db.reset_setting('second_pass_prompt')
     db.reset_setting('claude_model')
+    db.reset_setting('second_pass_model')
     db.reset_setting('multi_pass_enabled')
 
     logger.info("Reset ad detection settings to defaults")

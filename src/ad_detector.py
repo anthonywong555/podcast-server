@@ -22,15 +22,6 @@ Episode: {episode_title}
 Transcript:
 {transcript}"""
 
-# Valid model IDs - used to validate saved settings
-VALID_MODELS = [
-    'claude-sonnet-4-5-20250929',
-    'claude-opus-4-5-20251101',
-    'claude-sonnet-4-20250514',
-    'claude-opus-4-1-20250414',
-    'claude-3-5-sonnet-20241022',
-]
-
 # Retry configuration for transient API errors
 RETRY_CONFIG = {
     'max_retries': 3,
@@ -39,6 +30,12 @@ RETRY_CONFIG = {
     'exponential_base': 2,
     'jitter': True          # Add random jitter to prevent thundering herd
 }
+
+# Sliding window configuration for ad detection
+# Windows overlap to ensure ads at chunk boundaries are not missed
+WINDOW_SIZE_SECONDS = 600.0   # 10 minutes per window
+WINDOW_OVERLAP_SECONDS = 180.0  # 3 minutes overlap between windows
+WINDOW_STEP_SECONDS = WINDOW_SIZE_SECONDS - WINDOW_OVERLAP_SECONDS  # 7 minutes
 
 # Transition phrases for intelligent ad boundary detection
 # These are used to find precise start/end times using word timestamps
@@ -80,70 +77,6 @@ AD_END_PHRASES = [
     "now back to",
     "back to the show",
 ]
-
-# Second pass system prompt - BLIND analysis with different detection focus
-# This runs independently of first pass, focusing on subtle/baked-in ads
-BLIND_SECOND_PASS_SYSTEM_PROMPT = """You are a specialist in detecting SUBTLE and BAKED-IN advertisements in podcasts.
-
-Your expertise is finding ads that DON'T sound like traditional ads:
-- Host-read endorsements woven into conversation
-- Product mentions that sound like personal recommendations
-- Casual name-drops with promo codes or URLs
-- "Oh by the way" style product plugs
-- Sponsor mentions without "brought to you by" transitions
-
-FOCUS AREAS (prioritize these over obvious ad breaks):
-1. BAKED-IN ADS: Products mentioned naturally in conversation with commercial intent
-2. MID-ROLL STEALTH: Quick sponsor mentions sandwiched between content segments
-3. PERSONAL ENDORSEMENTS: "I've been using X and it's amazing" with any commercial details
-4. CROSS-PROMOTION: Mentions of other shows/podcasts with subscribe CTAs
-5. POST-CONTENT ADS: Anything promotional after "thanks for listening" or sign-off
-
-DETECTION SIGNALS:
-- Promo codes (use code X, code Y for discount)
-- Vanity URLs (visit example.com/showname)
-- Pricing/availability info
-- "Link in description/show notes"
-- Sudden product tangents unrelated to episode topic
-- Tonal shifts to more "scripted" delivery
-
-CRITICAL - AD SEGMENT BOUNDARIES:
-- Find the COMPLETE ad segment from start to finish
-- The END time must be when regular content RESUMES, not when the product pitch ends
-- Sponsor reads typically last 60-120 seconds - if your segment is under 45 seconds, verify you found the true end
-- Look for: return to episode topic, host banter resuming, different subject matter
-- Do NOT end the segment mid-pitch - include the full sponsor message and any closing CTA
-
-FINDING THE TRUE AD END:
-The ad does NOT end when the product pitch ends. It ends when SHOW CONTENT resumes.
-Look for these signals AFTER the pitch:
-- Host says "anyway", "alright", "so", "okay" and changes topic
-- Different speaker starts talking about non-ad content
-- Clear subject matter change back to episode topic
-- If the URL is repeated ("that's example.com/show"), wait for what comes AFTER
-
-Do NOT end the segment at:
-- First URL mention (they often repeat it)
-- End of product description (CTA usually follows)
-- Pause in speech (more ad content may follow)
-
-AD END SIGNALS (look for these AFTER the pitch):
-- "Now back to..." or "Anyway..." or "So..." transitions back to content
-- Return to episode topic or guest conversation
-- Musical stingers or segment transition sounds
-- Complete promo code/URL delivery (they usually close the ad)
-- Host saying "alright" or "okay" before resuming normal content
-
-BE AGGRESSIVE: If it sounds even slightly promotional, mark it. False positives are better than misses.
-
-EXPECT ADS: Podcasts always have ads. If first pass found ads, you should look for additional subtle/baked-in segments they might have missed. An empty result means you haven't looked hard enough.
-
-OUTPUT FORMAT:
-Return ONLY a valid JSON array of detected ad segments.
-Format: [{{"start": 0.0, "end": 60.0, "confidence": 0.95, "reason": "Description of ad", "end_text": "last words before ad ends"}}]
-
-If no ads detected: []"""
-
 
 def merge_and_deduplicate(first_pass: List[Dict], second_pass: List[Dict]) -> List[Dict]:
     """Merge ads from both passes, combining overlapping segments.
@@ -575,6 +508,101 @@ def merge_same_sponsor_ads(ads: List[Dict], segments: List[Dict], max_gap: float
     return merged
 
 
+def create_windows(segments: List[Dict], window_size: float = WINDOW_SIZE_SECONDS,
+                   overlap: float = WINDOW_OVERLAP_SECONDS) -> List[Dict]:
+    """Create overlapping windows from transcript segments.
+
+    Args:
+        segments: List of transcript segments with 'start', 'end', 'text'
+        window_size: Duration of each window in seconds
+        overlap: Overlap between consecutive windows in seconds
+
+    Returns:
+        List of window dicts with:
+            - 'start': window start time (absolute)
+            - 'end': window end time (absolute)
+            - 'segments': list of segments in this window
+    """
+    if not segments:
+        return []
+
+    # Get total transcript duration
+    total_duration = segments[-1]['end']
+    step_size = window_size - overlap
+
+    windows = []
+    window_start = 0.0
+
+    while window_start < total_duration:
+        window_end = min(window_start + window_size, total_duration)
+
+        # Find segments that overlap with this window
+        window_segments = []
+        for seg in segments:
+            # Segment overlaps if it starts before window ends AND ends after window starts
+            if seg['start'] < window_end and seg['end'] > window_start:
+                window_segments.append(seg)
+
+        if window_segments:
+            windows.append({
+                'start': window_start,
+                'end': window_end,
+                'segments': window_segments
+            })
+
+        window_start += step_size
+
+    logger.debug(f"Created {len(windows)} windows from {total_duration/60:.1f} min transcript")
+    return windows
+
+
+def deduplicate_window_ads(all_ads: List[Dict], merge_threshold: float = 5.0) -> List[Dict]:
+    """Deduplicate and merge ads detected across multiple windows.
+
+    When the same ad spans two windows, both windows may detect it.
+    This function merges overlapping detections.
+
+    Args:
+        all_ads: Combined list of ads from all windows
+        merge_threshold: Seconds within which ads are considered overlapping
+
+    Returns:
+        Deduplicated list with overlapping ads merged
+    """
+    if not all_ads:
+        return []
+
+    # Sort by start time
+    all_ads = sorted(all_ads, key=lambda x: x['start'])
+
+    # Merge overlapping ads
+    merged = [all_ads[0].copy()]
+
+    for current in all_ads[1:]:
+        last = merged[-1]
+
+        # Check for overlap (ads within threshold seconds are considered overlapping)
+        if current['start'] <= last['end'] + merge_threshold:
+            # Merge: extend end time if current goes further
+            if current['end'] > last['end']:
+                last['end'] = current['end']
+                if current.get('end_text'):
+                    last['end_text'] = current['end_text']
+            # Keep higher confidence
+            if current.get('confidence', 0) > last.get('confidence', 0):
+                last['confidence'] = current['confidence']
+                last['reason'] = current.get('reason', last.get('reason', ''))
+            # Mark as merged from windows
+            last['merged_windows'] = True
+        else:
+            merged.append(current.copy())
+
+    if len(merged) < len(all_ads):
+        logger.info(f"Window deduplication: {len(all_ads)} -> {len(merged)} ads")
+
+    return merged
+
+
 class AdDetector:
     """Detect advertisements in podcast transcripts using Claude API."""
 
@@ -638,20 +666,19 @@ class AdDetector:
         try:
             model = self.db.get_setting('claude_model')
             if model:
-                # Validate that model is in the list of known valid models
-                if model in VALID_MODELS:
-                    return model
-                else:
-                    logger.warning(f"Invalid model '{model}' in database, clearing and using default")
-                    # Clear invalid model from database
-                    try:
-                        self.db.save_setting('claude_model', DEFAULT_MODEL)
-                        logger.info(f"Saved default model '{DEFAULT_MODEL}' to database")
-                    except Exception as clear_err:
-                        logger.warning(f"Could not clear invalid model from DB: {clear_err}")
+                return model
         except Exception as e:
             logger.warning(f"Could not load model from DB: {e}")
+        return DEFAULT_MODEL
 
+    def get_second_pass_model(self) -> str:
+        """Get configured second pass model from database or default."""
+        try:
+            model = self.db.get_setting('second_pass_model')
+            if model:
+                return model
+        except Exception as e:
+            logger.warning(f"Could not load second pass model from DB: {e}")
         return DEFAULT_MODEL
 
     def get_system_prompt(self) -> str:
@@ -676,8 +703,9 @@ class AdDetector:
         except Exception as e:
             logger.warning(f"Could not load second pass prompt from DB: {e}")
 
-        # Default fallback - use the hardcoded constant
-        return BLIND_SECOND_PASS_SYSTEM_PROMPT
+        # Default fallback - import from database module
+        from database import DEFAULT_SECOND_PASS_PROMPT
+        return DEFAULT_SECOND_PASS_PROMPT
 
     def get_user_prompt_template(self) -> str:
         """Get user prompt template (hardcoded, not configurable)."""
@@ -708,10 +736,91 @@ class AdDetector:
             delay = delay * (0.5 + random.random())  # 50-150% of delay
         return delay
 
+    def _parse_ads_from_response(self, response_text: str, slug: str = None,
+                                  episode_id: str = None) -> List[Dict]:
+        """Parse ad segments from Claude's JSON response.
+
+        Args:
+            response_text: Raw text response from Claude
+            slug: Podcast slug for logging
+            episode_id: Episode ID for logging
+
+        Returns:
+            List of validated ad dicts with start, end, confidence, reason, end_text
+        """
+        try:
+            ads = None
+
+            # Strategy 1: Try to extract from markdown code block first
+            code_block_match = re.search(r'```(?:json)?\s*(\[[\s\S]*?\])\s*```', response_text)
+            if code_block_match:
+                try:
+                    ads = json.loads(code_block_match.group(1))
+                    logger.debug(f"[{slug}:{episode_id}] Extracted JSON from code block")
+                except json.JSONDecodeError:
+                    pass
+
+            # Strategy 2: Find all potential JSON arrays and use the last valid one
+            if ads is None:
+                last_valid_ads = None
+                for match in re.finditer(r'\[(?:[^\[\]]*|\[(?:[^\[\]]*|\[[^\[\]]*\])*\])*\]', response_text):
+                    try:
+                        potential_ads = json.loads(match.group())
+                        if isinstance(potential_ads, list):
+                            if not potential_ads or (potential_ads and isinstance(potential_ads[0], dict) and 'start' in potential_ads[0]):
+                                last_valid_ads = potential_ads
+                    except json.JSONDecodeError:
+                        continue
+
+                if last_valid_ads is not None:
+                    ads = last_valid_ads
+                    logger.debug(f"[{slug}:{episode_id}] Found valid JSON array in response")
+
+            # Strategy 3: Fallback to original first-to-last bracket logic
+            if ads is None:
+                clean_response = re.sub(r'```json\s*', '', response_text)
+                clean_response = re.sub(r'```\s*', '', clean_response)
+
+                start_idx = clean_response.find('[')
+                end_idx = clean_response.rfind(']') + 1
+
+                if start_idx >= 0 and end_idx > start_idx:
+                    json_str = clean_response[start_idx:end_idx]
+                    ads = json.loads(json_str)
+
+            if ads is None or not isinstance(ads, list):
+                logger.warning(f"[{slug}:{episode_id}] No valid JSON array found in response")
+                return []
+
+            # Validate and normalize ads
+            valid_ads = []
+            for ad in ads:
+                if isinstance(ad, dict) and 'start' in ad and 'end' in ad:
+                    start = float(ad['start'])
+                    end = float(ad['end'])
+                    if end > start:  # Skip invalid segments
+                        valid_ads.append({
+                            'start': start,
+                            'end': end,
+                            'confidence': float(ad.get('confidence', 1.0)),
+                            'reason': ad.get('reason', 'Advertisement detected'),
+                            'end_text': ad.get('end_text', '')
+                        })
+
+            return valid_ads
+
+        except json.JSONDecodeError as e:
+            logger.error(f"[{slug}:{episode_id}] Failed to parse JSON: {e}")
+            return []
+
     def detect_ads(self, segments: List[Dict], podcast_name: str = "Unknown",
                    episode_title: str = "Unknown", slug: str = None,
                    episode_id: str = None, episode_description: str = None) -> Optional[Dict]:
-        """Detect ad segments using Claude API with retry logic for transient errors."""
+        """Detect ad segments using Claude API with sliding window approach.
+
+        Processes transcript in overlapping windows to ensure ads at chunk
+        boundaries are not missed. Windows are 10 minutes with 3 minute overlap.
+        """
         if not self.api_key:
             logger.warning("Skipping ad detection - no API key")
             return {"ads": [], "status": "failed", "error": "No API key", "retryable": False}
@@ -719,191 +828,130 @@ class AdDetector:
         try:
             self.initialize_client()
 
-            # Prepare transcript with timestamps
-            transcript_lines = []
-            for segment in segments:
-                start = segment['start']
-                end = segment['end']
-                text = segment['text']
-                transcript_lines.append(f"[{start:.1f}s - {end:.1f}s] {text}")
+            # Create overlapping windows from transcript
+            windows = create_windows(segments)
+            total_duration = segments[-1]['end'] if segments else 0
 
-            transcript = "\n".join(transcript_lines)
+            logger.info(f"[{slug}:{episode_id}] Processing {len(windows)} windows "
+                       f"({WINDOW_SIZE_SECONDS/60:.0f}min size, {WINDOW_OVERLAP_SECONDS/60:.0f}min overlap) "
+                       f"for {total_duration/60:.1f}min episode")
 
-            # Get prompts from database
+            # Get prompts and model
             system_prompt = self.get_system_prompt()
             user_prompt_template = self.get_user_prompt_template()
+            model = self.get_model()
 
-            logger.info(f"[{slug}:{episode_id}] Using system prompt ({len(system_prompt)} chars)")
-            logger.debug(f"[{slug}:{episode_id}] System prompt first 200 chars: {system_prompt[:200]}...")
+            logger.info(f"[{slug}:{episode_id}] Using model: {model}")
+            logger.debug(f"[{slug}:{episode_id}] System prompt ({len(system_prompt)} chars)")
 
-            # Format user prompt with optional description
+            # Prepare description section (shared across windows)
             description_section = ""
             if episode_description:
                 description_section = f"Episode Description (this describes the actual content topics discussed; it may also list episode sponsors):\n{episode_description}\n"
                 logger.info(f"[{slug}:{episode_id}] Including episode description ({len(episode_description)} chars)")
-            else:
-                logger.info(f"[{slug}:{episode_id}] No episode description available")
 
-            prompt = user_prompt_template.format(
-                podcast_name=podcast_name,
-                episode_title=episode_title,
-                description_section=description_section,
-                transcript=transcript
-            )
-
-            # Log prompt hash for debugging determinism
-            prompt_hash = hashlib.md5(prompt.encode()).hexdigest()[:8]
-            logger.info(f"[{slug}:{episode_id}] Prompt hash: {prompt_hash}")
-
-            logger.info(f"[{slug}:{episode_id}] Sending transcript to Claude "
-                       f"({len(segments)} segments, {len(transcript)} chars)")
-
-            # Call Claude API with configured model and retry logic
-            model = self.get_model()
-            logger.debug(f"[{slug}:{episode_id}] Using model: {model}")
-
-            response = None
-            last_error = None
+            all_window_ads = []
+            all_raw_responses = []
             max_retries = RETRY_CONFIG['max_retries']
 
-            for attempt in range(max_retries + 1):
-                try:
-                    response = self.client.messages.create(
-                        model=model,
-                        max_tokens=2000,
-                        temperature=0.0,
-                        system=system_prompt,
-                        messages=[{
-                            "role": "user",
-                            "content": prompt
-                        }]
-                    )
-                    break  # Success - exit retry loop
-                except Exception as e:
-                    last_error = e
-                    if self._is_retryable_error(e) and attempt < max_retries:
-                        # For rate limit errors, wait full minute to reset window
-                        if isinstance(e, RateLimitError):
-                            delay = 60.0
-                            logger.warning(
-                                f"[{slug}:{episode_id}] Rate limit hit, waiting {delay:.0f}s for window reset"
-                            )
-                        else:
-                            delay = self._calculate_backoff(attempt)
-                            logger.warning(
-                                f"[{slug}:{episode_id}] API error (attempt {attempt + 1}/{max_retries + 1}): "
-                                f"{type(e).__name__}: {e}. Retrying in {delay:.1f}s"
-                            )
-                        time.sleep(delay)
-                        continue
-                    else:
-                        # Non-retryable error or exhausted retries
-                        logger.error(f"[{slug}:{episode_id}] Ad detection failed after {attempt + 1} attempts: {e}")
-                        return {
-                            "ads": [],
-                            "status": "failed",
-                            "error": str(e),
-                            "error_type": type(e).__name__,
-                            "retryable": self._is_retryable_error(e),
-                            "prompt": prompt
-                        }
+            # Process each window
+            for i, window in enumerate(windows):
+                window_segments = window['segments']
+                window_start = window['start']
+                window_end = window['end']
 
-            if response is None:
-                # Should not reach here, but safety net
-                logger.error(f"[{slug}:{episode_id}] Ad detection failed - no response after retries")
-                return {
-                    "ads": [],
-                    "status": "failed",
-                    "error": str(last_error) if last_error else "Unknown error",
-                    "retryable": True,
-                    "prompt": prompt
-                }
+                # Build transcript for this window (segments have absolute timestamps)
+                transcript_lines = []
+                for seg in window_segments:
+                    transcript_lines.append(f"[{seg['start']:.1f}s - {seg['end']:.1f}s] {seg['text']}")
+                transcript = "\n".join(transcript_lines)
 
-            # Extract response
-            response_text = response.content[0].text if response.content else ""
-            logger.info(f"[{slug}:{episode_id}] Claude response: {len(response_text)} chars")
+                # Add window context to prompt
+                window_context = f"""
 
-            # Parse JSON from response
-            try:
-                ads = None
+=== WINDOW {i+1}/{len(windows)}: {window_start/60:.1f}-{window_end/60:.1f} minutes ===
+- Use absolute timestamps from transcript (as shown in brackets)
+- If an ad starts before this window, use the first timestamp with note "continues from previous"
+- If an ad extends past this window, use {window_end:.1f} with note "continues in next"
+"""
 
-                # Strategy 1: Try to extract from markdown code block first
-                code_block_match = re.search(r'```(?:json)?\s*(\[[\s\S]*?\])\s*```', response_text)
-                if code_block_match:
+                prompt = user_prompt_template.format(
+                    podcast_name=podcast_name,
+                    episode_title=episode_title,
+                    description_section=description_section,
+                    transcript=transcript
+                ) + window_context
+
+                logger.info(f"[{slug}:{episode_id}] Window {i+1}/{len(windows)}: "
+                           f"{window_start/60:.1f}-{window_end/60:.1f}min, {len(window_segments)} segments")
+
+                # Call Claude API with retry logic
+                response = None
+                last_error = None
+
+                for attempt in range(max_retries + 1):
                     try:
-                        ads = json.loads(code_block_match.group(1))
-                        logger.debug(f"[{slug}:{episode_id}] Extracted JSON from code block")
-                    except json.JSONDecodeError:
-                        pass
-
-                # Strategy 2: Find all potential JSON arrays and use the last valid one
-                if ads is None:
-                    last_valid_ads = None
-                    # Match JSON arrays - use non-greedy to get individual arrays
-                    for match in re.finditer(r'\[(?:[^\[\]]*|\[(?:[^\[\]]*|\[[^\[\]]*\])*\])*\]', response_text):
-                        try:
-                            potential_ads = json.loads(match.group())
-                            if isinstance(potential_ads, list):
-                                # Check if it looks like ad data (has start/end keys)
-                                if not potential_ads or (potential_ads and isinstance(potential_ads[0], dict) and 'start' in potential_ads[0]):
-                                    last_valid_ads = potential_ads
-                        except json.JSONDecodeError:
+                        response = self.client.messages.create(
+                            model=model,
+                            max_tokens=2000,
+                            temperature=0.0,
+                            system=system_prompt,
+                            messages=[{"role": "user", "content": prompt}]
+                        )
+                        break
+                    except Exception as e:
+                        last_error = e
+                        if self._is_retryable_error(e) and attempt < max_retries:
+                            if isinstance(e, RateLimitError):
+                                delay = 60.0
+                                logger.warning(f"[{slug}:{episode_id}] Window {i+1} rate limit, waiting {delay:.0f}s")
+                            else:
+                                delay = self._calculate_backoff(attempt)
+                                logger.warning(f"[{slug}:{episode_id}] Window {i+1} API error: {e}. Retrying in {delay:.1f}s")
+                            time.sleep(delay)
                             continue
+                        else:
+                            logger.error(f"[{slug}:{episode_id}] Window {i+1} failed: {e}")
+                            return {
+                                "ads": [],
+                                "status": "failed",
+                                "error": str(e),
+                                "error_type": type(e).__name__,
+                                "retryable": self._is_retryable_error(e),
+                                "prompt": f"Failed at window {i+1}"
+                            }
 
-                    if last_valid_ads is not None:
-                        ads = last_valid_ads
-                        logger.debug(f"[{slug}:{episode_id}] Found valid JSON array in response")
+                if response is None:
+                    logger.error(f"[{slug}:{episode_id}] Window {i+1} - no response after retries")
+                    continue
 
-                # Strategy 3: Fallback to original first-to-last bracket logic
-                if ads is None:
-                    clean_response = re.sub(r'```json\s*', '', response_text)
-                    clean_response = re.sub(r'```\s*', '', clean_response)
+                # Parse response
+                response_text = response.content[0].text if response.content else ""
+                all_raw_responses.append(f"=== Window {i+1} ({window_start/60:.1f}-{window_end/60:.1f}min) ===\n{response_text}")
 
-                    start_idx = clean_response.find('[')
-                    end_idx = clean_response.rfind(']') + 1
+                # Parse ads from response
+                window_ads = self._parse_ads_from_response(response_text, slug, episode_id)
+                logger.info(f"[{slug}:{episode_id}] Window {i+1} found {len(window_ads)} ads")
 
-                    if start_idx >= 0 and end_idx > start_idx:
-                        json_str = clean_response[start_idx:end_idx]
-                        ads = json.loads(json_str)
+                all_window_ads.extend(window_ads)
 
-                if ads is None:
-                    logger.warning(f"[{slug}:{episode_id}] No JSON array found in response")
-                    return {"ads": [], "status": "success", "raw_response": response_text, "prompt": prompt, "error": "No JSON found"}
+            # Deduplicate ads across windows
+            final_ads = deduplicate_window_ads(all_window_ads)
 
-                if isinstance(ads, list):
-                    valid_ads = []
-                    for ad in ads:
-                        if isinstance(ad, dict) and 'start' in ad and 'end' in ad:
-                            valid_ads.append({
-                                'start': float(ad['start']),
-                                'end': float(ad['end']),
-                                'confidence': float(ad.get('confidence', 1.0)),
-                                'reason': ad.get('reason', 'Advertisement detected'),
-                                'end_text': ad.get('end_text', '')
-                            })
+            total_ad_time = sum(ad['end'] - ad['start'] for ad in final_ads)
+            logger.info(f"[{slug}:{episode_id}] Total after dedup: {len(final_ads)} ads ({total_ad_time/60:.1f} min)")
 
-                    total_ad_time = sum(ad['end'] - ad['start'] for ad in valid_ads)
-                    logger.info(f"[{slug}:{episode_id}] Detected {len(valid_ads)} ad segments "
-                               f"({total_ad_time/60:.1f} min total)")
-                    for ad in valid_ads:
-                        logger.info(f"[{slug}:{episode_id}] Ad: {ad['start']:.1f}s-{ad['end']:.1f}s "
-                                   f"({ad['end']-ad['start']:.0f}s) end_text='{ad.get('end_text', '')[:50]}'")
+            for ad in final_ads:
+                logger.info(f"[{slug}:{episode_id}] Ad: {ad['start']:.1f}s-{ad['end']:.1f}s "
+                           f"({ad['end']-ad['start']:.0f}s) end_text='{ad.get('end_text', '')[:50]}'")
 
-                    return {
-                        "ads": valid_ads,
-                        "status": "success",
-                        "raw_response": response_text,
-                        "prompt": prompt,
-                        "model": model
-                    }
-                else:
-                    logger.warning(f"[{slug}:{episode_id}] Response was not a JSON array")
-                    return {"ads": [], "status": "success", "raw_response": response_text, "prompt": prompt, "error": "Response not an array"}
-
-            except json.JSONDecodeError as e:
-                logger.error(f"[{slug}:{episode_id}] Failed to parse JSON: {e}")
-                logger.error(f"[{slug}:{episode_id}] Raw response (first 500 chars): {response_text[:500]}")
-                return {"ads": [], "status": "success", "raw_response": response_text, "prompt": prompt, "error": str(e)}
+            return {
+                "ads": final_ads,
+                "status": "success",
+                "raw_response": "\n\n".join(all_raw_responses),
+                "prompt": f"Processed {len(windows)} windows",
+                "model": model
+            }
 
         except Exception as e:
             logger.error(f"[{slug}:{episode_id}] Ad detection failed: {e}")
@@ -931,7 +979,11 @@ class AdDetector:
                                podcast_name: str = "Unknown", episode_title: str = "Unknown",
                                slug: str = None, episode_id: str = None,
                                episode_description: str = None) -> Optional[Dict]:
-        """Blind second pass ad detection with different focus (subtle/baked-in ads)."""
+        """Blind second pass ad detection with sliding window approach.
+
+        Focuses on subtle/baked-in ads using a separate model and prompt.
+        Uses the same sliding window approach as first pass for consistency.
+        """
         if not self.api_key:
             logger.warning("Skipping second pass - no API key")
             return {"ads": [], "status": "failed", "error": "No API key", "retryable": False}
@@ -939,157 +991,135 @@ class AdDetector:
         try:
             self.initialize_client()
 
-            # Prepare transcript with timestamps
-            transcript_lines = []
-            for segment in segments:
-                start = segment['start']
-                end = segment['end']
-                text = segment['text']
-                transcript_lines.append(f"[{start:.1f}s - {end:.1f}s] {text}")
+            # Create overlapping windows from transcript
+            windows = create_windows(segments)
+            total_duration = segments[-1]['end'] if segments else 0
 
-            transcript = "\n".join(transcript_lines)
+            logger.info(f"[{slug}:{episode_id}] Second pass: Processing {len(windows)} windows "
+                       f"for {total_duration/60:.1f}min episode")
 
-            # Use blind second pass prompt from database (or default)
+            # Get second pass prompt and model (can be different from first pass)
             system_prompt = self.get_second_pass_prompt()
+            model = self.get_second_pass_model()
 
-            # Format user prompt with optional description
+            logger.info(f"[{slug}:{episode_id}] Second pass using model: {model}")
+
+            # Prepare description section (shared across windows)
             description_section = ""
             if episode_description:
                 description_section = f"Episode Description (this describes the actual content topics discussed; it may also list episode sponsors):\n{episode_description}\n"
                 logger.info(f"[{slug}:{episode_id}] Second pass: Including episode description ({len(episode_description)} chars)")
-            else:
-                logger.info(f"[{slug}:{episode_id}] Second pass: No episode description available")
 
-            prompt = USER_PROMPT_TEMPLATE.format(
-                podcast_name=podcast_name,
-                episode_title=episode_title,
-                description_section=description_section,
-                transcript=transcript
-            )
-
-            # Log prompt hash for debugging determinism
-            prompt_hash = hashlib.md5(prompt.encode()).hexdigest()[:8]
-            logger.info(f"[{slug}:{episode_id}] Second pass prompt hash: {prompt_hash}")
-
-            logger.info(f"[{slug}:{episode_id}] Second pass: Sending transcript to Claude "
-                       f"({len(segments)} segments, {len(transcript)} chars)")
-
-            # Call Claude API with retry logic
-            model = self.get_model()
-            response = None
-            last_error = None
+            all_window_ads = []
+            all_raw_responses = []
             max_retries = RETRY_CONFIG['max_retries']
 
-            for attempt in range(max_retries + 1):
-                try:
-                    response = self.client.messages.create(
-                        model=model,
-                        max_tokens=2000,
-                        temperature=0.0,
-                        system=system_prompt,
-                        messages=[{"role": "user", "content": prompt}]
-                    )
-                    break
-                except Exception as e:
-                    last_error = e
-                    if self._is_retryable_error(e) and attempt < max_retries:
-                        # For rate limit errors, wait full minute to reset window
-                        if isinstance(e, RateLimitError):
-                            delay = 60.0
-                            logger.warning(
-                                f"[{slug}:{episode_id}] Rate limit hit, waiting {delay:.0f}s for window reset"
-                            )
-                        else:
-                            delay = self._calculate_backoff(attempt)
-                            logger.warning(
-                                f"[{slug}:{episode_id}] Second pass API error (attempt {attempt + 1}): {e}. Retrying in {delay:.1f}s"
-                            )
-                        time.sleep(delay)
-                        continue
-                    else:
-                        logger.error(f"[{slug}:{episode_id}] Second pass failed: {e}")
-                        return {
-                            "ads": [],
-                            "status": "failed",
-                            "error": str(e),
-                            "retryable": self._is_retryable_error(e)
-                        }
+            # Process each window
+            for i, window in enumerate(windows):
+                window_segments = window['segments']
+                window_start = window['start']
+                window_end = window['end']
 
-            if response is None:
-                return {"ads": [], "status": "failed", "error": str(last_error), "retryable": True}
+                # Build transcript for this window
+                transcript_lines = []
+                for seg in window_segments:
+                    transcript_lines.append(f"[{seg['start']:.1f}s - {seg['end']:.1f}s] {seg['text']}")
+                transcript = "\n".join(transcript_lines)
 
-            # Extract and parse response
-            response_text = response.content[0].text if response.content else ""
-            logger.info(f"[{slug}:{episode_id}] Second pass response: {len(response_text)} chars")
+                # Add window context to prompt
+                window_context = f"""
 
-            # Parse JSON - same logic as first pass
-            try:
-                ads = None
-                code_block_match = re.search(r'```(?:json)?\s*(\[[\s\S]*?\])\s*```', response_text)
-                if code_block_match:
+=== WINDOW {i+1}/{len(windows)}: {window_start/60:.1f}-{window_end/60:.1f} minutes ===
+- Use absolute timestamps from transcript (as shown in brackets)
+- If an ad starts before this window, use the first timestamp with note "continues from previous"
+- If an ad extends past this window, use {window_end:.1f} with note "continues in next"
+"""
+
+                prompt = USER_PROMPT_TEMPLATE.format(
+                    podcast_name=podcast_name,
+                    episode_title=episode_title,
+                    description_section=description_section,
+                    transcript=transcript
+                ) + window_context
+
+                logger.info(f"[{slug}:{episode_id}] Second pass Window {i+1}/{len(windows)}: "
+                           f"{window_start/60:.1f}-{window_end/60:.1f}min")
+
+                # Call Claude API with retry logic
+                response = None
+                last_error = None
+
+                for attempt in range(max_retries + 1):
                     try:
-                        ads = json.loads(code_block_match.group(1))
-                    except json.JSONDecodeError:
-                        pass
-
-                if ads is None:
-                    for match in re.finditer(r'\[(?:[^\[\]]*|\[(?:[^\[\]]*|\[[^\[\]]*\])*\])*\]', response_text):
-                        try:
-                            potential_ads = json.loads(match.group())
-                            if isinstance(potential_ads, list):
-                                if not potential_ads or (isinstance(potential_ads[0], dict) and 'start' in potential_ads[0]):
-                                    ads = potential_ads
-                        except json.JSONDecodeError:
+                        response = self.client.messages.create(
+                            model=model,
+                            max_tokens=2000,
+                            temperature=0.0,
+                            system=system_prompt,
+                            messages=[{"role": "user", "content": prompt}]
+                        )
+                        break
+                    except Exception as e:
+                        last_error = e
+                        if self._is_retryable_error(e) and attempt < max_retries:
+                            if isinstance(e, RateLimitError):
+                                delay = 60.0
+                                logger.warning(f"[{slug}:{episode_id}] Second pass Window {i+1} rate limit, waiting {delay:.0f}s")
+                            else:
+                                delay = self._calculate_backoff(attempt)
+                                logger.warning(f"[{slug}:{episode_id}] Second pass Window {i+1} API error: {e}. Retrying in {delay:.1f}s")
+                            time.sleep(delay)
                             continue
+                        else:
+                            logger.error(f"[{slug}:{episode_id}] Second pass Window {i+1} failed: {e}")
+                            return {
+                                "ads": [],
+                                "status": "failed",
+                                "error": str(e),
+                                "retryable": self._is_retryable_error(e)
+                            }
 
-                if ads is None:
-                    clean_response = re.sub(r'```json\s*', '', response_text)
-                    clean_response = re.sub(r'```\s*', '', clean_response)
-                    start_idx = clean_response.find('[')
-                    end_idx = clean_response.rfind(']') + 1
-                    if start_idx >= 0 and end_idx > start_idx:
-                        ads = json.loads(clean_response[start_idx:end_idx])
+                if response is None:
+                    logger.error(f"[{slug}:{episode_id}] Second pass Window {i+1} - no response after retries")
+                    continue
 
-                if ads is None:
-                    logger.warning(f"[{slug}:{episode_id}] Second pass: No JSON array found")
-                    return {"ads": [], "status": "success", "raw_response": response_text, "prompt": prompt}
+                # Parse response
+                response_text = response.content[0].text if response.content else ""
+                all_raw_responses.append(f"=== Window {i+1} ({window_start/60:.1f}-{window_end/60:.1f}min) ===\n{response_text}")
 
-                if isinstance(ads, list):
-                    valid_ads = []
-                    for ad in ads:
-                        if isinstance(ad, dict) and 'start' in ad and 'end' in ad:
-                            valid_ads.append({
-                                'start': float(ad['start']),
-                                'end': float(ad['end']),
-                                'confidence': float(ad.get('confidence', 1.0)),
-                                'reason': ad.get('reason', 'Second pass detection'),
-                                'end_text': ad.get('end_text', ''),
-                                'pass': 2  # Mark as second pass detection
-                            })
+                # Parse ads from response
+                window_ads = self._parse_ads_from_response(response_text, slug, episode_id)
 
-                    if valid_ads:
-                        total_ad_time = sum(ad['end'] - ad['start'] for ad in valid_ads)
-                        logger.info(f"[{slug}:{episode_id}] Second pass found {len(valid_ads)} additional ads "
-                                   f"({total_ad_time/60:.1f} min)")
-                        for ad in valid_ads:
-                            logger.info(f"[{slug}:{episode_id}] Second pass Ad: {ad['start']:.1f}s-{ad['end']:.1f}s "
-                                       f"({ad['end']-ad['start']:.0f}s) end_text='{ad.get('end_text', '')[:50]}'")
-                    else:
-                        logger.info(f"[{slug}:{episode_id}] Second pass: No additional ads found")
+                # Mark all ads as second pass
+                for ad in window_ads:
+                    ad['pass'] = 2
 
-                    return {
-                        "ads": valid_ads,
-                        "status": "success",
-                        "raw_response": response_text,
-                        "prompt": prompt,
-                        "model": model
-                    }
-                else:
-                    return {"ads": [], "status": "success", "raw_response": response_text, "prompt": prompt}
+                logger.info(f"[{slug}:{episode_id}] Second pass Window {i+1} found {len(window_ads)} ads")
+                all_window_ads.extend(window_ads)
 
-            except json.JSONDecodeError as e:
-                logger.error(f"[{slug}:{episode_id}] Second pass JSON parse error: {e}")
-                return {"ads": [], "status": "success", "raw_response": response_text, "prompt": prompt, "error": str(e)}
+            # Deduplicate ads across windows
+            final_ads = deduplicate_window_ads(all_window_ads)
+
+            # Ensure pass=2 is preserved after dedup
+            for ad in final_ads:
+                ad['pass'] = 2
+
+            if final_ads:
+                total_ad_time = sum(ad['end'] - ad['start'] for ad in final_ads)
+                logger.info(f"[{slug}:{episode_id}] Second pass total: {len(final_ads)} ads ({total_ad_time/60:.1f} min)")
+                for ad in final_ads:
+                    logger.info(f"[{slug}:{episode_id}] Second pass Ad: {ad['start']:.1f}s-{ad['end']:.1f}s "
+                               f"({ad['end']-ad['start']:.0f}s) end_text='{ad.get('end_text', '')[:50]}'")
+            else:
+                logger.info(f"[{slug}:{episode_id}] Second pass: No additional ads found")
+
+            return {
+                "ads": final_ads,
+                "status": "success",
+                "raw_response": "\n\n".join(all_raw_responses),
+                "prompt": f"Second pass: Processed {len(windows)} windows",
+                "model": model
+            }
 
         except Exception as e:
             logger.error(f"[{slug}:{episode_id}] Second pass failed: {e}")
